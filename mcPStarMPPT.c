@@ -1,4 +1,3 @@
-
 /*  * Modbus C for: Morningstar ProStar MPPT______________________________________________
  *  * This program is OpenSource: released under Artistic-2.0 license
  *  ****************** by sunja AT centerflowing.com 2023 **********************
@@ -12,7 +11,7 @@
  *  -  Profiles: --decimal thousands [0.00n] can be rounded to nearest (Float16) hundreth!
  *				#------------------------------ie. 15.5660 => 15.5625 ,  15.5670 => 15.5703
 
- **************************************************************************************************
+ **************************************************************************************************!
  *	**possible conflicts are if MAX_CHAR length is less than 256 on compiling system...?
  *  **possible conflicts with Y2038 time_t date bug!
  *  * Display-text output will break if data structs are rearranged, due to getIndex() not being used for all..
