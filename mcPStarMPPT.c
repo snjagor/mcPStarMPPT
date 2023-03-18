@@ -11,19 +11,19 @@
  *  -  Profiles: --decimal thousands [0.00n] can be rounded to nearest (Float16) hundreth!
  *				#------------------------------ie. 15.5660 => 15.5625 ,  15.5670 => 15.5703
 
- **************************************************************************************************!
+ ****************************************************************************************************
  *	**possible conflicts are if MAX_CHAR length is less than 256 on compiling system...?
  *  **possible conflicts with Y2038 time_t date bug!
  *  * Display-text output will break if data structs are rearranged, due to getIndex() not being used for all..
  *    		Combo-fields will also break if not read in right order..
  	//--MaxLimit string lengths of global config settings:? (<128)? - fileOut , profileDir , (profile)
-	//----problems if total strln is > 256 ... printOut(), jsonOut():char jsontxt[655] is biggest. 
+	//----total char strln > 256: ... printOut(), jsonOut():jsontxt[655] is biggest.
  *
  *   	+cvs output not working!, !externalize configuration!, +wide char support, 
  *  ++ Profiles: custom descriptions vs. translation, +filter user string descriptions in chkProfile(), 
  * +------check dipsChargeMode() before updating?   late night normalization as option?? not for -s[ilent]
  *	ToDo:	default defaults, static to functions, combine readLogCache() & chkProfile() input parsing, printOut()?, 
- 				Default modbus address based on eeprom 0xE034, 
+ 				Default modbus address based on eeprom 0xE034, voltage multiplier for >12v systems!
  
 Notes:
 	* voltages in profiles & structs are set for 12v. 24v & higher systems are auto-multiplied by charger!
@@ -101,9 +101,10 @@ static int updates[UPDATEABLE] =
 //	{0xE007,0xE008,0xE009,0xE00A}; 
 //--Status led-----------:
 //	{0xE030,0xE031,0xE032,0xE033};
+/* -----------------------end config-------------------------------------------- */
 
 
-/* //---------------------GLOBAL VARS---------------------------------------//: */
+/* //---------------------GLOBAL VARS---------------------------//Do Not Change: */
 //typedef unsigned long ulint;  //--:..unused. lint
 typedef unsigned int uint; 
 typedef unsigned short ushort; //'uint16_t' (aka 'unsigned short') 
@@ -1135,7 +1136,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			//--get oldest log:---------:		//latest wraps around to oldest.
 			readLogs(ctx,startX,(short)2,logs);
 			if (logs[1].log[0].value.lv) { oldestLog=logs[1].log[0].value.lv;  } //-:oldest hrmtr
-			 if (debug>2) printf("\n>Oldest log hourmeter found: %ld\n", oldestLog);
+			 if (debug) printf("\n>Oldest log hourmeter found: %ld\n", oldestLog);
 			if (oldestLog) { 
 				if (logOpt==4) { start=logs[1].log[0].hexa; tnum=255; //-:oldest addr hexa (return ALL logs)
 					strncpy(strbuf, "Reading All logs ...", sizeof(strbuf)/sizeof(strbuf[0])); } 
@@ -1309,7 +1310,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			} else {
 				// * //--Formated:--------------------------------------------: * /
 				printf("################################## 0x%04X #####################################\n",logs[a].log[0].hexa);
-				printf("%s Date:	%s\n",(cdMarker==1?"Cached\t":"Approximate"),logs[a].date_s); 
+				printf("%s	%s\n",(cdMarker==1?"Cached Date:\t":"Approximate Date:"),logs[a].date_s); 
 				if (cindex && timeSkipB) printf("\t\t(date is within [%ld] hrs)\n",timeSkipB);//-:buffer vagueness >12?
 				printf("Time of Log: %ld hrs		(%.0f days ago)\n",logs[a].log[0].value.lv, daysago);
 				printf("Min Battery volts:	%f v	Max Array volts:	%f v\n",logs[a].log[8].value.fv, logs[a].log[12].value.fv);
@@ -1541,7 +1542,7 @@ static uint16_t writeUpdate(modbus_t *ctxx, RamObj *inStruct) {
 static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) { 
 	//--return total found: logs [255 max?]... (logs[] init top of logBlock)
 	//----------maybe pass oldestLog.hexa: oldest-to-end, then wrap around till null?
-	memset(&logs, 0, sizeof(logs)); //-:clear
+	memset(&logs[0], 0, (size_t)255); //-:clear
 	short total = 0;  short bi=0; char leftovers=0; char lp=0;
 	
 	/*/--Create Bulk:---------: ------------------------------------------ --- // */
@@ -1755,7 +1756,7 @@ static short parseLogs(uint start, short logx, LogObj *logs, uint16_t datal[], s
 	return ret;
 }
 
-static short searchLogs(modbus_t *ctxx, uint start, long search, short tnum, LogObj *logs) {
+static short searchLogs(modbus_t *ctxx, uint start, long search, short tnum, LogObj *logs) { 
 	//if (!search) return -1;
 	char strbuf [256]=""; char bufbuf [128]=""; //strlen(long)==19, 
 	searching=1;
@@ -1763,7 +1764,7 @@ static short searchLogs(modbus_t *ctxx, uint start, long search, short tnum, Log
 	short iteration=0; 
 	while (iteration<51) { iteration++; 
 		if (debug>1) { printf("%s",strbuf); //--print prev. iteration
-			snprintf(strbuf,(size_t) 8,">%hu  search: ",iteration); } //--:next
+			snprintf(strbuf,(size_t) 8,">%hu ",iteration); } //--:next  " search: "
 		else { memset(&strbuf[0], '\0', sizeof(strbuf)); } //fprintf(fp,"\n"); //-:empty fprintf(fp,) needed.
 		
 		if (start < 0x8000) { start=0x9000-(tnum*16);  //beginning. goto end.

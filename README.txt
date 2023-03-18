@@ -97,11 +97,12 @@ With no arguments the program will output current stats and settings for the con
 
 - 'update' : update using default profile if one is set
 
-- 'revert' : update charger with program's built-in values (off by default)
+- 'revert' : update charger with program's built-in values (disabled by default)
 
 - 'convert' : convert between Float16 and Float values
 
 - Output options:
+* default is converted decimal values
 * 'raw' : output raw values from memory instead of human readable decimal (Float16, etc..)
 
 
