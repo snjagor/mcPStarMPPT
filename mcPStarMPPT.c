@@ -22,7 +22,7 @@
  *   	+cvs output not working!, !externalize configuration!, +wide char support, 
  *  ++ Profiles: custom descriptions vs. translation, +filter user string descriptions in chkProfile(), 
  * +------check dipsChargeMode() before updating?   late night normalization as option?? not for -s[ilent]
- *	ToDo:	default defaults, static to functions, combine readLogCache() & chkProfile() input parsing, printOut()?, 
+ *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings, 
  				Default modbus address based on eeprom 0xE034, voltage multiplier for >12v systems!
  
 Notes:
@@ -45,7 +45,8 @@ Notes:
 #include <unistd.h>		//usedfor:
 #define CUPDATEABLE 14 	/*  */
 #define UPDATEABLE 37 	/*  */
-#define MSMPPT    0x01	/* Default modbus address of the MPPT */ //---:[0xE034] = unsigned char modbusId */
+#define MSMPPT    0x01	/* Default modbus address of the MPPT */ //---:[0xE034] */
+int MAX_CACHE_SIZE = 200000;		//-:max file size before rebuilding
 
 /* //---------------------CONFIGURATION---------------------------------------//: */
 //static char externalize_config=0; //--:read configuration from file, use below as fallbacks? 
@@ -63,7 +64,7 @@ static char profile[64] = ""; 					//--name of default profile (for update cmd)
 static char profileTag[24] = "_profile";  		//--:appended to all profiles (required)
 static char profileBackups[32] = "settings";  	//-:file name prefix for backups
 /* External Date Cache *///-------filename:[profileDir+log_cache+"_"+fileOut+".txt"]
-static const char real_date_logs=1;  //-:enable small external cache for [rl] dating of logs. 
+static const char real_date_logs=1;  //-:enable small external cache for [rl] dating of logs.
 static char log_cache[32] = "logCache";  //-:file prefix
 //--Date format in log cache:-------------------------can be: m-d-yyyy , d-m-yyyy , yyyy-d-m
 static const char log_cache_month_position = 1;  //--:Month is: 1=first, 2=second, 3=third
@@ -73,7 +74,7 @@ static const char update_all_defaults=0; //-:enable builtin 'update all' cmd.. (
 /* Display note for your battery's voltages: Specific to battery make and type. (default is completely generic!)  */
 static char batteryVoltagesNote[255] = "Generic Battery Voltages:\n 100%%:[12.7] volts, 90%%:[12.6], 80%%:[12.5], 70%%:[12.3], 60%%:[12.2], 50%%:[12.1], 40%%:[12.0], 30%%:[11.9], 20%%:[11.8], 10%%:[11.7]";
 /* Debug */ 
-//--0=print Display, 1=print RAM/EEPROM & display, 2=verbose debug, >=3=no writes, >3=+logCache debug
+//--0=print Display, 1=print RAM/EEPROM & display, 2=verbose debug, >=3=no writes, >3=+logCache & profiles debug...
 char debug = 0; 
 
 /* //-------------- BUILTIN UPDATES TO SEND -------------------------------------// */
@@ -165,7 +166,7 @@ static const long readLogCache(char doo[]);
 static const long writeLogCache(char dool);
 static void searchLogCache(long hrmeter, time_t *, int *); 
 //static void printLogs(LogObj *logs, size_t logsN);
-static const char* chkProfile(char* profileName);
+static const char* chkProfile(char* doo, char* profileName);
 static char parseProfileValue(char doo[], int pi, int ep, RamObj *eprom);
 //--Get Registers:--------------:
 void upRegisters(modbus_t *ctxx, RamObj *inStructA, int num, int *registers, int rn); 
@@ -343,7 +344,7 @@ int main(int argc, char *argv[]) {
 	    if (strcmp(argv[i], "-h")==0) { printf("\n________ProStar MPPT Charger Open Controller_______________________\n" 
 			"\n %s (no options = default display output)\n\n"
 			" %s [output|control options] [update|logs options]\n\n"
-			"Output Options:\n\t poll, json, json+ (display info), debug, debug+ (create json too), eeprom, -s,\n"
+			"Output Options:\n\t poll, json, json+ (display info), debug, debug+ (verbose debug), eeprom, -s,\n"
 				"\t debugn (to stdout), raw (output raw float16 values)\n\n"
 			"Control Options:\n\t reboot,   EQ [ON | OFF],\n"
 				"\t reset_charge (kwh & Ah resetables), reset_totals,\n\t reset_all (all resetables), resetC (custom)\n\n"
@@ -354,7 +355,7 @@ int main(int argc, char *argv[]) {
 				"\t -  n being: number-to-return, x = [start addr || days ago || hrs hourmeter]\n"
 				"\t Options: \n"
 				"\t\t-b n | --buffer n  :buffer log dates with n hours\n"
-				"\t\t--debug  :additional log debug output\n"
+				"\t\t--debug  :additional log debug output\n" //-:debug=2 or gt
 				"\t Output options: can be specified before logs cmd..\n"
 				"\t 'logs all' will read All logs from charger, upto max of 255.\n\n"
 			"Utilities:\n\t convert [float value]   (...to F16)\n"
@@ -365,7 +366,7 @@ int main(int argc, char *argv[]) {
 		else if (strcmp(argv[i], "json+")==0) { json=1; display=1; } 
 		//else if (strcmp(argv[i], "cvs")==0) {  cvs=1; display=0; } //:disabled cvs
 		else if (strcmp(argv[i], "debug")==0) { debug = 1; }
-		else if (strcmp(argv[i], "debug+")==0) { debug = 1; json=1; } 
+		else if (strcmp(argv[i], "debug+")==0) { debug = 2; } 
 		//--coils:
 		else if (strcmp(argv[i], "reboot")==0) { 
 			trigger_coils = 1; memset(&coil_updates[0], '\0', CUPDATEABLE); 
@@ -397,7 +398,7 @@ int main(int argc, char *argv[]) {
 			if (profile[0] && profile[1]) { //--:"default" profile exists: 
 				if (strcmp(profile, "new")==0 || strcmp(profile, "print")==0 || strcmp(profile, "-")==0) { 
 					printf(">error: unsupported or reserved profile name!\n"); return 0;  }
-				strncpy(profile, chkProfile(profile), sizeof(profile)); //(char*)profile 
+				strncpy(profile, chkProfile("p",profile), sizeof(profile)); //(char*)profile 
 			} else { fprintf(stderr,">No Default profile!\n"); return -1; }  
 			action="current_settings";  skip_RAM=1; break; //display=1; //just_EEPROM = 1; 
 		} 
@@ -419,15 +420,15 @@ int main(int argc, char *argv[]) {
 				skip_RAM=1; display=0; break; } //-current eeprom  
 			else if (strcmp(argv[i], "validate")==0) { action="validate"; i++; 
 				bufs[0]='\0'; strncpy(bufs, argv[i], sizeof(bufs));  //--Filter filename!
-				//profile = chkProfile(bufs); } //-first parse-----------:Read Profile 
-				strncpy(profile, chkProfile(bufs), sizeof(profile)); } 			//escapeStr("file",bufs)
+				//profile = chkProfile("p",bufs); } //-first parse-----------:Read Profile 
+				strncpy(profile, chkProfile("p",bufs), sizeof(profile)); } 			//escapeStr("file",bufs)
 			//--reserved names:
 			else if (strcmp(argv[i], "new")==0 || strcmp(argv[i], "print")==0 || strcmp(argv[i], "-")==0) { 
 				printf(">error: unsupported or reserved profile name!\n"); return 0;  }
 			//--user profile:
 			else { action = "current_settings"; bufs[0]='\0'; //-:backup first.
 				strncpy(bufs, argv[i], sizeof(bufs)); //--Filter filename here?  escapeStr("file",bufs) !?! 
-				strncpy(profile, chkProfile(bufs), sizeof(profile)); } //-first parse-----------:Read Profile 
+				strncpy(profile, chkProfile("p",bufs), sizeof(profile)); } //-first parse-----------:Read Profile 
 			
 			//--Profile Header:
 			if (!profile[0]){ fprintf(stderr,"Error opening profile: [  ]\n"); return -1; }   
@@ -890,7 +891,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		else { y++; bulk[y].start = eprom[ii].hexa; bulk[y].i = 1; x=1; }  
 	} 
 	
-	if (display && debug && strcmp(action,"current_settings")!=0) { 
+	if (display && debug>1 && strcmp(action,"current_settings")!=0) { 
 		printf("\n--------------------------------------------------------------------" 
 			"\nSTARTING Bulk EEPROM Read: \t[ %zu ]\n", nume); }
 	//--Loop bulk registers array:
@@ -898,7 +899,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		const int dsize = bulk[i].i;		uint16_t datas [dsize];   
 		//--bulk read:
 		readModbus(ctx, bulk[i].start, bulk[i].i, datas);
-		if (debug && strcmp(action,"current_settings")!=0) { 
+		if (debug>1 && strcmp(action,"current_settings")!=0) { 
 			printf("\n%d: STARTING bulk eprom: 0x%04X: \t[ %d ]\n", i, bulk[i].start, (int) datas[0]); }
 	
 		int e = getIndex(bulk[i].start,nume,eprom);  short z=0;
@@ -1891,7 +1892,7 @@ static const long readLogCache(char doo[]) {
 		//--get size of file:  //printf(">size of file %d\n",size);
 		fseek(fpp,0, SEEK_END);	int size = ftell(fpp); int file_size = size; ploc=size;    
 		//--Rebuild?: backup and recreate at end of func: !!!
-		if (file_size > 200000) { rebuildCache=1; }
+		if (file_size > MAX_CACHE_SIZE) { rebuildCache=1; }
 		fseek(fpp,-rbytes, SEEK_END); //-read from end
 		fread(str, rbytes, 1, fpp); int readIts=1; //-:read multiplier
 		long preNl=0;
@@ -1900,7 +1901,7 @@ static const long readLogCache(char doo[]) {
 		do { if (readIts!=-1) readIts++; 
 			str[ strlen(str) ] = '\0';  //+1
 			int nls = searchStr("\n",str); preNl=0; preNl = strcspn(str,"\n");
-			  if (debug>3) { printf(">before nl: %lu , total: %d\nbuffer=[%s]\n\n", preNl,nls,str); }//--
+			  if (debug>4) { printf(">before nl: %lu , total: %d\nbuffer=[%s]\n\n", preNl,nls,str); }//--
 			  if (!nls) { preNl=rbytes; continue; }
 			 
 			char * last_nl = strrchr(str, '\n'); //-if no nl??
@@ -1959,7 +1960,7 @@ static const long readLogCache(char doo[]) {
 						if (logCache[st].udate <= 0 || logCache[st].udate > ts) { 
 							fprintf(stderr,">ERROR: log date cache, line %d unspported. %ld\n",tmp,logCache[st].udate); logCache[st].udate=0; next=1; nls--;  continue; }
 						//--date string:---------------------:	
-						  if (debug>4) printf(">line %d found cache date [ %ld ],\n",tmp, logCache[st].udate); //
+						  if (debug>3) printf(">line %d found cache date [ %ld ],\n",tmp, logCache[st].udate); //
 						//--normalize cached date to ...def[6pm==21600]:-----------------: 
 						//---logCache[cindex].nHrs = time added to cached Date to normalize
 						//...iow:  cached date time was before noon if (logCache[cindex].nHrs)...
@@ -1974,7 +1975,7 @@ static const long readLogCache(char doo[]) {
 					} 
 					else if (strspn(token,"1234567890-")==resulTmp) { //--timestamp from string:----------:
 						strncpy(logCache[st].date_s, token, 127); logCache[st].date_s[127]='\0'; 
-						  if (debug>4) printf(">line %d found cache date string [ %s ]\n",tmp, token); 
+						  if (debug>3) printf(">line %d found cache date string [ %s ]\n",tmp, token); 
 						struct tm logD = {0};  logD.tm_isdst = -1; int ret=0;
 						//--configured format:
 						if (log_cache_month_position==1) {
@@ -1994,7 +1995,7 @@ static const long readLogCache(char doo[]) {
 							fprintf(stderr,">ERROR: log cache date, line %d unspported.\n",tmp); 
 							logCache[st].udate=0; next=1; nls--; continue; }
 						//--debug:ctime(&logCache[st].udate)
-						if (debug>4) printf(">%d date numbers. month=%d day=%d year=%d\n",
+						if (debug>3) printf(">%d date numbers. month=%d day=%d year=%d\n",
 							ret,logD.tm_mon,logD.tm_mday,logD.tm_year);	
 					 } 
 					 else { fprintf(stderr,">ERROR: no valid log cache date.\n"); } //,resulTmp
@@ -2005,7 +2006,7 @@ static const long readLogCache(char doo[]) {
 						if (!logCache[st].nHrs) logCache[st].nHrs=0;
 						//--is .date_s even used?????
 						strftime(logCache[st].date_s,(size_t) 127, date_format, localtime(&logCache[st].udate));
-						if (debug>4) { printf(">>[%ld]\ttimeStamp : %ld , Date: %s\n", logCache[st].hrmtr-logCache[st].nHrs,  logCache[st].udate, logCache[st].date_s); } 
+						if (debug>3) { printf(">>[%ld]\ttimeStamp : %ld , Date: %s\n", logCache[st].hrmtr-logCache[st].nHrs,  logCache[st].udate, logCache[st].date_s); } 
 						if (rebuildCache) { strncpy(logCache[st].line,lineBuff,(size_t)256);  } 
 					}
 					
@@ -2023,17 +2024,17 @@ static const long readLogCache(char doo[]) {
 			} //:--end  while(nls) [newlines found in str (last_line)]---------------
 			//--Exit or read next block of file:-------------------------------------:
 			//--Break if beggining or wrapped-around-end of file:
-			if (readIts<1){ if (debug>4){printf(">Found beginning of file or max reads.\n\n");} readIts=0; }
+			if (readIts<1){ if (debug>3){printf(">Found beginning of file or max reads.\n\n");} readIts=0; }
 			else { 
 				int readTo = (rbytes*readIts);	//-
 				//Step backwards: including excess from last iteration..
 				if (readTo>file_size) { fseek(fpp, 0, SEEK_SET); rbytes = (readTo-file_size); readIts=-1; } //!+preNl
 				else { fseek(fpp, (-readTo), SEEK_END);  } //rbytes += preNl;
 				size = ftell(fpp); //printf(">location of read %d\n",size);
-				if (debug>4){printf("\n>...seeking to %d*%d+%ld...%d<=%d\n",rbytes,readIts,preNl,size,ploc);}
+				if (debug>3){printf("\n>...seeking to %d*%d+%ld...%d<=%d\n",rbytes,readIts,preNl,size,ploc);}
 				ploc = size; 
 				//-------error:skips reading begining of file if rbytes is big!! solution:?
-				//if (size>ploc){ if (debug>4) printf(">Found beginning or end of file or max reads.\n\n"); 
+				//if (size>ploc){ if (debug>3) printf(">Found beginning or end of file or max reads.\n\n"); 
 				//		readIts=0; break; }
 			} 
 			memset(&str[0],'\0',sizeof(str)); //--:clear
@@ -2286,9 +2287,12 @@ static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[])
 	return 0;
 }
 
-const char* chkProfile(char* profileName) { 
+const char* chkProfile(char*doo, char* profileName) { 
 	//--Parse txt || cvs profile in:  		!escapeStr() before function!!!!
-	const char *prof = appendStr(4, profileDir,escapeStr("file",profileName),profileTag,".txt");
+	const char *prof;
+	if (strcmp(doo,"p")==0) { 
+		prof = appendStr(4, profileDir,escapeStr("file",profileName),profileTag,".txt"); }
+	//else if (strcmp(doo,"s")==0) { prof = profileName;  } //-:settings file parsing
 	//static char prof[125] = ""; prof[0] = '\0'; ///---appendStr is const char*
 	//strncpy(prof, appendStr(3, profileName, profileTag,".txt"), sizeof(prof));  //--:either works:
 	
@@ -2313,37 +2317,40 @@ const char* chkProfile(char* profileName) {
 			char* token = strtok(str,",");
 			//--Trim whitespace, Error if not valid:
 			if (token) trimP(token);
-			if (strncmp(token,"0xE",3)!=0 && strncmp(token,"57",2)!=0) { 
-			   		fprintf(stderr,">ERROR with cvs file line %d! [ %s ] is not valid!\n", tmp,token); exit(1);  }
-			//--Convert register address value:........ minus one for (documented) rl!
-			else if (strncmp(token,"57",2)==0) { result=1; eeprom = atoi(token); eeprom--;  }
-			//--Convert hexadecimal string into number:-----------------------:
-			else { result=1; eeprom = strtol(token,NULL,16); } //--convert hexadecimal!!!!!!!!!!!!!!
-			//--check register key again:
-			if (eeprom > 57344 || eeprom < 57409) {        
-					if (debug>3 && result) printf("\n0x%04X==[%d]  ", eeprom,eeprom); 
-			} else { fprintf(stderr,">ERROR with cvs file! [ %s ] is not valid register value!\n", token); exit(1);  } //
+			//--//--FIRST value [Profile] check -- EEPROM register PDU:----------------:
+				if (strncmp(token,"0xE",3)!=0 && strncmp(token,"57",2)!=0) { 
+						   fprintf(stderr,">ERROR with cvs file line %d! [ %s ] is not valid!\n", tmp,token); exit(1); }
+				//--Convert register address value:........ minus one for (documented) rl!
+				else if (strncmp(token,"57",2)==0) { result=1; eeprom = atoi(token); eeprom--;  }
+				//--Convert hexadecimal string into number:-----------------------:
+				else { result=1; eeprom = strtol(token,NULL,16); } //--convert hexadecimal!!!!!!!!!!!!!!
+				//--check register key again:
+				if (eeprom > 57344 || eeprom < 57409) {        
+						if (debug>3 && result) printf("\n0x%04X==[%d]  ", eeprom,eeprom); 
+				} else { fprintf(stderr,">ERROR with cvs file! [ %s ] is not valid register value!\n", token); exit(1); }
+			//--//--FIRST token [Settings] check:--  :-------------------------------:
+			//...
 					
 			//--Register data values:-----------------------------------:  
 			//---after above key, only 2: first is new value, second (optional) description-notes.
-			//--do each individually: //while (token != NULL) {   
-			//--Profile register data Value:
-				token = strtok(NULL, ",\n"); 
+			//--do each individually: //while (token != NULL) {  
+			//--//--SECOND -----------------------------------------------:
+				token = strtok(NULL, ",\n"); 	//--Profile register data Value:
 				//--trim whitespace,etc... && ! isspace((unsigned int)token[0])
 				if (token) { trimP(token); result=strlen(token); }
 				else {result = 0; }  if (!result) { fprintf(stderr,">ERROR no value for register [0x%04X]\n",eeprom); 
-					continue; } //--skip if nothing, warn or error.
-			//---Assign values from profile:-----------------------------------------------:
+					continue; } //--skip if nothing, warn or error. 
+			//--Profile: Assign values:
 				profileIn[st].hexa = eeprom; 
 				strncpy(profileIn[st].sv, token, 16); //(...save value as string for now...)!!!!!
 					if (debug>3) printf("->[%s]\t", token); //
-					
-			//--User description string:-----------:filtering?!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+			//--//--THIRD 		------------------------------------------:
 				token = strtok(NULL, ",\n"); 
 				//--trim whitespace,etc... && ! isspace((unsigned int)token[0])
 				if (token) { trimP(token); result=strlen(token); }
 				else {result = 0;}   
-				//---Add new register description/notes from profile:
+				//--Profile: Add new register description/notes from profile:
+				//---User description string:-----------:filtering?!!!!!!!!!
 				if (result) { strncpy(profileIn[st].string, token, (size_t)101); //--strncat()? onto full description?
 					if (debug>3) printf("->[%s]", token); //--DEBUG!
 				}
@@ -2654,7 +2661,7 @@ void trimP (char *str) {
 void printOUT (int ind, char type, RamObj *inStruct) { 
 	///--create buffer for inStruct 
 	char buf[600]=""; //!!.sv=255!.string=255!!
-	char bufValue[16] = "";  //char bufType[3] = ""; 
+	char bufValue[19] = "";  //char bufType[3] = ""; 
 	//--skip printout function: hack 
 	if ((!display && !just_EEPROM) || !debug) return;
 	
@@ -2674,16 +2681,20 @@ void printOUT (int ind, char type, RamObj *inStruct) {
 		//--format-------------------------: 
 		if (raw) snprintf(bufValue, sizeof(bufValue), "%d", dvalue); //raw
 		else snprintf(bufValue, sizeof(bufValue), "%f", inStruct->value.fv); 
+		//debug:
+		snprintf(buf, sizeof(buf), "cf%d:\t", ind);
 		//--Current data----------------:  inStruct->value.fv //strcpy(bufType, "cf");
-		printf("cf%d:\t 0x%04X [ %s %s ] %s", ind, (int) inStruct->hexa, bufValue, inStruct->unit, inStruct->string);
+		printf("%s 0x%04X [ %s %s ] %s", (debug>1?buf:""), (int) inStruct->hexa, bufValue, inStruct->unit, inStruct->string);
 	}
 	//--Ints: *Days,hours,mins,secs,+single #'s----------------------------------------------- //
 	else if (type=='d') {    
 		//-format-------------------------:
 		if (raw) snprintf(bufValue, sizeof(bufValue), "%d", dvalue); //raw
 		else snprintf(bufValue, sizeof(bufValue), "%d", inStruct->value.dv);   
+		//debug:
+		snprintf(buf, sizeof(buf), "rd%d:\t", ind);
 		//---print out raw data----------: (int) inStruct->hexa, inStruct->value.dv   //strcpy(bufType, "rd");
-		printf("rd%d:\t 0x%04X [ %s %s ] %s", ind, (int) inStruct->hexa, bufValue, inStruct->unit, inStruct->string);
+		printf("%s 0x%04X [ %s %s ] %s", (debug>1?buf:""), (int) inStruct->hexa, bufValue, inStruct->unit, inStruct->string);
 		
 	//--:Bitfields, States, Combo calcs:(modbus_get_float_abcd()), ----------------------------------://
 	} else if (type=='s') {   //----------STRINGS NEED ESCAPING!?
@@ -2694,23 +2705,27 @@ void printOUT (int ind, char type, RamObj *inStruct) {
 				if (strlen(inStruct->value.sv) > 18) {
 								snprintf(buf, sizeof(buf), "\n %s", inStruct->value.sv); } //--nl block!
 				else { strncpy(buf, inStruct->value.sv, sizeof(buf)); }
-				printf("rh%d:\t 0x%04X [ %x %s ]  %s %s", ind, (int) inStruct->hexa, dvalue, 
+				//debug:
+				snprintf(bufValue, sizeof(bufValue), "rh%d:\t", ind);
+				printf("%s 0x%04X [ %x %s ]  %s %s", (debug>1?bufValue:""), (int) inStruct->hexa, dvalue, 
 						inStruct->unit, inStruct->string, buf); // */
 						
 				/*	snprintf(bufS, sizeof(bufS), "%s \n %s", inStruct->string, inStruct->sv); } //--nl block!
 				else { strncat(bufS, inStruct->sv, (strlen(inStruct->sv)-1)); } 
 				//strcpy(bufType, "rh"); //buf[0]='\0'; //!?
-				printf("rh%d:\t 0x%04X [ %x %s ]  %s\n", ind, (int) inStruct->hexa, dvalue, 
+				printf("%s 0x%04X [ %x %s ]  %s\n", (rh%d:\t), (int) inStruct->hexa, dvalue, 
 						inStruct->unit, bufS); // */
 		//---Print out State, ...-----------: //!!!Problem!!!
 		} else 
 		//strcpy(bufType, "cd"); buf=->value.sv; bufValue+=(5,dvalue," ",->unit," ",->value.sv)
-			printf("cd%d:\t 0x%04X [ %d %s %s ]  %s", ind, (int) inStruct->hexa, dvalue, 
+			snprintf(bufValue, sizeof(bufValue), "cd%d:\t", ind);	//--:debug
+			printf("%s 0x%04X [ %d %s %s ]  %s", (debug>1?bufValue:""), (int) inStruct->hexa, dvalue, 
 						inStruct->unit, inStruct->value.sv, inStruct->string);  //bufS   *%x better?
 	}
 	else { //---print out raw data----------: 	//
 		//snprintf(bufValue, sizeof(bufValue), "%d", inStruct->basev); strcpy(bufType, "rr"); 
-		printf("rr%d:\t 0x%04X [ %ld %s ] %s", ind, (int) inStruct->hexa, (inStruct->value.lv? inStruct->value.lv:(long)dvalue), inStruct->unit, inStruct->string); 
+		snprintf(bufValue, sizeof(bufValue), "rr%d:\t", ind);	//--:debug
+		printf("%s 0x%04X [ %ld %s ] %s", (debug>1?bufValue:""), (int) inStruct->hexa, (inStruct->value.lv? inStruct->value.lv:(long)dvalue), inStruct->unit, inStruct->string); 
 	}
 	//--end line:
 	if (update && updated) { printf(" (NEW)\n"); }
