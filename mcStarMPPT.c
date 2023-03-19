@@ -23,7 +23,7 @@
  *  ++ Profiles: custom descriptions vs. translation, +filter user string descriptions in chkProfile(), 
  * +------check dipsChargeMode() before updating?   late night normalization as option?? not for -s[ilent]
  *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
-				create profile block: rm unnecessary if's() 
+				create-profile-block: rm unnecessary if's() 
  				Default modbus address based on eeprom 0xE034, voltage multiplier for >12v systems!
  
 Notes:
@@ -400,17 +400,18 @@ int main(int argc, char *argv[]) {
 				if (strcmp(profile, "new")==0 || strcmp(profile, "print")==0 || strcmp(profile, "-")==0) { 
 					printf(">error: unsupported or reserved profile name!\n"); return 0;  }
 				strncpy(profile, chkProfile("p",profile), sizeof(profile)); //(char*)profile 
-			} else { fprintf(stderr,">No Default profile!\n"); return -1; }  
-			action="current_settings";  skip_RAM=1; break; //display=1; //just_EEPROM = 1; 
+			} else { fprintf(stderr,">No Default profile!\n"); return -1; } //display=1; //just_EEPROM = 1;   
+			action="current_settings";  skip_RAM=1; break; 
 		} 
 		else if (strcmp(argv[i], "revert")==0) { 
 			profile[0]='-'; profile[1]='\0'; i++; debug=2;
-			if (argv[i] && strcmp(argv[i], "all")==0 && update_all_defaults) {
+			if (argv[i] && strcmp(argv[i], "all")==0 && update_all_defaults) { 
 				//-:builtin eprom values (deprecate?) -off by default-
 				mrk=8; printf(">WARNING< Updating All Values to compiled Defaults!\n"); }
 			else if (updates[0]) { mrk=1; //-:only use builtin updates[] (mark for parsing as profile)
 				printf(">Updating to compiled Defaults!\n"); } 
-			else { printf(">Built-in values unavailable.\n\n"); return -1; }  
+			else { printf(">Built-in values unavailable.\n\n"); return -1; }    
+			action="current_settings";  skip_RAM=1; break;
 		}
 		//--Profile cmds/options:
 		else if (strcmp(argv[i], "profile")==0) { i++; 
@@ -643,18 +644,18 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	print_out_profile: ;	//--label for creating profile with current Charger data: 
 	num = sizeof(ram) / sizeof(ram[0]);
 	nume = sizeof(eprom) / sizeof(eprom[0]);
-						//mrk: 8==revertAll, 1==revert to updates[], 5==new prof, 
+	
 	/*/--Profile template:--------------------------------------------------------:/*/
 	//---Create new profile, backup, or backup before updating w/profile:
-	//----Output debug: 0,1,2==float output unless (raw)==save as F16, >=3==stdout
-	if (mrk==5 || strcmp(action,"new")==0 || strcmp(action,"backupprofile")==0) { //rm! unused/uneeded: ! mrk==5 || "new"! 
-		//---:mrk=5 ? profile="new", (action="current_settings")-------profile="print",(action="current_settings")
+	if (strcmp(action,"backupprofile")==0) { //|| mrk==5  //mrk: 8==revertAll, 1==revert to updates[], 5==new prof, 
+		//-:mrk==5? 	profile="new", offline(action="bkupp") OR online(action="current_settings"=>"bkupp")  
+		//-:backup cmd: (profile="print",action="current_settings"=>"bkupp")
 		//--Defaults or Current EEPROM:---------------------------: 
-		if (strcmp(profile,"new")==0) { display=1; //debug=debug==3? 2:debug;
-			createProfile("new", nume,eprom,ctime_s); return 0; } 
-		else {  char raw2=raw; //--create filename: //most of this could be done in createProfile()..
-			if (strcmp(action,"backupprofile")==0) { raw=1;  } //:force raw backups.
-			if (debug<3) {  snprintf(bufs,sizeof(bufs),"%s",profileBackups);
+		if (strcmp(profile,"new")==0) { display=1; createProfile("new", nume,eprom,ctime_s); return 0; } 
+		//--:Backup Settings:-------------------------------------://could be done in createProfile()..
+		else {  char raw2=raw;
+			//if (strcmp(action,"backupprofile")==0) { raw=1; } //:force raw backups.   
+			if (debug<3) { raw=1; snprintf(bufs,sizeof(bufs),"%s",profileBackups); //--:create filename 
 			} else {  if (bufs[0]) memset(&bufs[0],'\0',sizeof(bufs)); //--:stdout
 				printf(">Backing up EEPROM settings to stdout:\n\n"); } 
 			//--print out profile: 
