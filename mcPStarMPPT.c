@@ -22,7 +22,8 @@
  *   	+cvs output not working!, !externalize configuration!, +wide char support, 
  *  ++ Profiles: custom descriptions vs. translation, +filter user string descriptions in chkProfile(), 
  * +------check dipsChargeMode() before updating?   late night normalization as option?? not for -s[ilent]
- *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings, 
+ *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
+				create profile block: rm unnecessary if's() 
  				Default modbus address based on eeprom 0xE034, voltage multiplier for >12v systems!
  
 Notes:
@@ -409,7 +410,7 @@ int main(int argc, char *argv[]) {
 				mrk=8; printf(">WARNING< Updating All Values to compiled Defaults!\n"); }
 			else if (updates[0]) { mrk=1; //-:only use builtin updates[] (mark for parsing as profile)
 				printf(">Updating to compiled Defaults!\n"); } 
-			else { printf(">Built-in values unavailable.\n\n"); return -1; }  //else mrk=2;
+			else { printf(">Built-in values unavailable.\n\n"); return -1; }  
 		}
 		//--Profile cmds/options:
 		else if (strcmp(argv[i], "profile")==0) { i++; 
@@ -443,7 +444,7 @@ int main(int argc, char *argv[]) {
 		//--debug 2: mostly extra debug info for logs.. , 'update' cmd: use builtin defaults!
 		//--display/show raw values. w/:debug: <..2==write files , 3==stdout , 
 		else if (strcmp(argv[i], "raw")==0) { raw = 1; } 
-		else if (strcmp(argv[i], "eeprom")==0) { just_EEPROM = 1; display=0; debug = debug?debug:1; } 
+		else if (strcmp(argv[i], "eeprom")==0) { just_EEPROM = 1; display=0; } 
 		//--numeric exit errors:
 		else if (strcmp(argv[i], "-s")==0) {  sil = 1;  }
 		//--Logs:
@@ -453,7 +454,7 @@ int main(int argc, char *argv[]) {
 			else if (strcmp(argv[i],"all")==0) { i++; logOpt=4; break; } //--:read All logs
 			else if (sscanf(argv[i], "%hd",&tnum)==1) { if (tnum<1 || tnum >255) return -1; i++; }
 		 	while (i < argc) { //printf("\t\t%d>arg[ %s ]\n", i, argv[i]); //--loop remaining log cmds--
-				if (strcmp(argv[i], "--debug")==0) { i++; debug=debug>2?debug:2; } //:-- mrk=2; !!!!!!!
+				if (strcmp(argv[i], "--debug")==0) { i++; debug=debug>2?debug:2; } 
 				//--:turn on/toggle date buffering:
 				else if (strcmp(argv[i], "--buffer")==0 || strcmp(argv[i], "-b")==0) { 
 					i++; lbuf_input=1;  //--custom buffer hrs:           --upto 6?? months--  ???  
@@ -642,20 +643,23 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	print_out_profile: ;	//--label for creating profile with current Charger data: 
 	num = sizeof(ram) / sizeof(ram[0]);
 	nume = sizeof(eprom) / sizeof(eprom[0]);
-	
+						//mrk: 8==revertAll, 1==revert to updates[], 5==new prof, 
 	/*/--Profile template:--------------------------------------------------------:/*/
 	//---Create new profile, backup, or backup before updating w/profile:
 	//----Output debug: 0,1,2==float output unless (raw)==save as F16, >=3==stdout
-	if (mrk==5 || strcmp(action,"new")==0 || strcmp(action,"backupprofile")==0) {  
+	if (mrk==5 || strcmp(action,"new")==0 || strcmp(action,"backupprofile")==0) { //rm! unused/uneeded: ! mrk==5 || "new"! 
+		//---:mrk=5 ? profile="new", (action="current_settings")-------profile="print",(action="current_settings")
 		//--Defaults or Current EEPROM:---------------------------: 
 		if (strcmp(profile,"new")==0) { display=1; //debug=debug==3? 2:debug;
 			createProfile("new", nume,eprom,ctime_s); return 0; } 
-		else {  //--create filename: //most of this could be done in createProfile()..
-			if (debug<2) {  snprintf(bufs,sizeof(bufs),"%s",profileBackups);
+		else {  char raw2=raw; //--create filename: //most of this could be done in createProfile()..
+			if (strcmp(action,"backupprofile")==0) { raw=1;  } //:force raw backups.
+			if (debug<3) {  snprintf(bufs,sizeof(bufs),"%s",profileBackups);
 			} else {  if (bufs[0]) memset(&bufs[0],'\0',sizeof(bufs)); //--:stdout
 				printf(">Backing up EEPROM settings to stdout:\n\n"); } 
 			//--print out profile: 
 			createProfile(bufs,nume,eprom,ctime_s); if (bufs[0]) memset(&bufs[0],'\0',sizeof(bufs));
+			if (raw2!=raw) { raw=raw2; }
 		}
 		/*/--Continue to update EEPROM: ------------------------------------*/
 		if (strcmp(profile,"print")==0) {  return 0; }
@@ -751,15 +755,15 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	if (display && strcmp(action,"current_settings")!=0) { //--(skip for backups)
 		printf("################################################################\n"
 			"## Modbus C MStarProMPPT - %s - [%s] \n"
-			"################################################################\n", setting_s, ctime_s); 
-		if (profile[0]) { printf("Profile: %s \n", profile); }//else if (polling){ " [%ld] ", now; }
+			"################################################################\n", setting_s, ctime_s);
 		/* #-------------------------CHARGER STATUS ID DATA----------------------------# */
 		//--read ------------------CHARGER STATUS:----------------:
 		rc = modbus_read_registers(ctx, 0x0021, 1, data);  
 		  if (rc == -1) {	fprintf(stderr, "!%s\n", modbus_strerror(errno));  return -1; }
 		//--print charger state & debug:   //char CState[32] = ""; strcat(CState, );
 		printf("Charger State: %s\t\t\tHrmeter:%ld, Debug: %d\n",getStateString(0x0021, (uint16_t) data[0]),now,debug);
-		data[0]=0;
+		if (profile[0]) { printf("Profile: %s \n", profile); }//else if (polling){ " [%ld] ", now; }
+		data[0]=0; 
 		/*/--read ------------------CHARGER  INFO:----------------: not Working!
 		uint16_t sdata[3]; //Device Identification addr: (0x2B, subcode 0x0E)
 		rc = modbus_read_registers(ctx, 0x00, 3, sdata);  
@@ -894,6 +898,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	if (display && debug>1 && strcmp(action,"current_settings")!=0) { 
 		printf("\n--------------------------------------------------------------------" 
 			"\nSTARTING Bulk EEPROM Read: \t[ %zu ]\n", nume); }
+	if (just_EEPROM && debug<1) { debug=1; } //-:needed
 	//--Loop bulk registers array:
 	for(short i=0;i<16;i++) { if (!bulk[i].i) break; //--endof (bulk[].start will break on 0x0000 !!)
 		const int dsize = bulk[i].i;		uint16_t datas [dsize];   
@@ -1884,7 +1889,7 @@ static const long readLogCache(char doo[]) {
 	fpp = fopen (file_logCache, "r"); //b 
 	//--Read from file:-----------------------------------------------:
 	if (fpp)  {  char str[128]=""; int tmp=0; 
-		if (debug) printf(">%s Log Cache:--------:[%s]\n", 
+		if (debug>1) printf(">%s Log Cache:--------:[%s]\n", 
 			(strcmp(doo,"lastLog")==0?"Checking":"Reading"), file_logCache);
 		//----Require and skip first cvs def line..  error if not present.
 		if( strncmp(fgets(str,127,fpp),cvsL,strlen(cvsL)-2)!=0 ) { fprintf(stderr,">ERROR with cvs file!\n"); exit(1); }
@@ -2257,7 +2262,7 @@ static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[])
 
 	fprintf(fp,"Register,new value,description,\n"
 		"#--first line MUST be exactly as above! (last comma opt.)\n"
-		"//Morningstar ProStar MPPT Charger Settings:------------:\n");
+		"//Ms ProStar MPPT Charger Settings:------------:\n");
 	if (f==1) fprintf(fp,"#-Logical Addr must be as docs specify.\n"
 		"#---trailing zeros on voltages are optional.\n"
 		"#----descriptions are optional and [willbe appended?] ...\n"
@@ -2716,12 +2721,12 @@ void printOUT (int ind, char type, RamObj *inStruct) {
 				printf("%s 0x%04X [ %x %s ]  %s\n", (rh%d:\t), (int) inStruct->hexa, dvalue, 
 						inStruct->unit, bufS); // */
 		//---Print out State, ...-----------: //!!!Problem!!!
-		} else 
+		} else {
 		//strcpy(bufType, "cd"); buf=->value.sv; bufValue+=(5,dvalue," ",->unit," ",->value.sv)
 			snprintf(bufValue, sizeof(bufValue), "cd%d:\t", ind);	//--:debug
 			printf("%s 0x%04X [ %d %s %s ]  %s", (debug>1?bufValue:""), (int) inStruct->hexa, dvalue, 
 						inStruct->unit, inStruct->value.sv, inStruct->string);  //bufS   *%x better?
-	}
+	}	}
 	else { //---print out raw data----------: 	//
 		//snprintf(bufValue, sizeof(bufValue), "%d", inStruct->basev); strcpy(bufType, "rr"); 
 		snprintf(bufValue, sizeof(bufValue), "rr%d:\t", ind);	//--:debug
