@@ -2,7 +2,7 @@
  *  * This program is OpenSource: released under Artistic-2.0 license
  *  ****************** by sunja AT centerflowing.com 2023 **********************
  * correct way: [-fsyntax-only : Only run the preprocessor, parser and type checking stages.]
- * cc -Wall $(pkg-config libmodbus --cflags) mcPStarMPPT.c $(pkg-config libmodbus --libs) -lm -o mcPStarMPPT
+ * cc -Wall $(pkg-config libmodbus --cflags) mcStarMPPT.c $(pkg-config libmodbus --libs) -lm -o mcPStarMPPT
  
  *  - 	Logs	-	logs 0x8000 ... 0x8FFF data[256] each is 32bytes(16 modbus registers). 
  *						------ sortby hourmeter (ignoring 0x000000 and 0xFFFFFF) ------
@@ -23,8 +23,7 @@
  *  ++ Profiles: custom descriptions vs. translation, +filter user string descriptions in chkProfile(), 
  * +------check dipsChargeMode() before updating?   late night normalization as option?? not for -s[ilent]
  *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
-				create-profile-block: rm unnecessary if's() 
- 				Default modbus address based on eeprom 0xE034, voltage multiplier for >12v systems!
+ 			RAM 0x0001: voltage multiplier - voltages stored as 12v & multiplied! PStar==1,2, TStar==1,2,4 (12,24,48)
  
 Notes:
 	* voltages in profiles & structs are set for 12v. 24v & higher systems are auto-multiplied by charger!
@@ -54,7 +53,6 @@ int MAX_CACHE_SIZE = 200000;		//-:max file size before rebuilding
 //--------------------------------------:   will create file on startup if none exists. (multi chargers? arg for alts)
 unsigned char modbusId=0;  //:Default modbus address of the MPPT: 0==default
 char display=1; 
-static float maxV = 0;    //:profile input safety check.. 
 static char date_format[64] = "%a %b %d %Y"; //--format for dates (w/o time)
 char json=0; char cvs=0; //---create json [or cvs] files
 static const char* fileOut = "PStarMPPT_"; 	//--output files. (json,logs,cvs,etc.) 
@@ -74,6 +72,9 @@ static int locked_registers[UPDATEABLE] = {0xE034,0xE035,0xE01A}; //modbus,meter
 static const char update_all_defaults=0; //-:enable builtin 'update all' cmd.. (security & safety risk!)
 /* Display note for your battery's voltages: Specific to battery make and type. (default is completely generic!)  */
 static char batteryVoltagesNote[255] = "Generic Battery Voltages:\n 100%%:[12.7] volts, 90%%:[12.6], 80%%:[12.5], 70%%:[12.3], 60%%:[12.2], 50%%:[12.1], 40%%:[12.0], 30%%:[11.9], 20%%:[11.8], 10%%:[11.7]";
+/*  Max / Min Voltages - All input voltages 12v in eeprom!  */
+static float maxV = 0; 	//:profile input safety check.. [default fallback=18] (EQ||HVD==highest)
+static float minV = 0;  //:profile input safety check.. [default fallback=11.5]
 /* Debug */ 
 //--0=print Display, 1=print RAM/EEPROM & display, 2=verbose debug, >=3=no writes, >3=+logCache & profiles debug...
 char debug = 0; 
@@ -113,7 +114,7 @@ typedef unsigned short ushort; //'uint16_t' (aka 'unsigned short')
 static const char cvsH[] = "Register,new value,description,\n";
 static const char cvsL[] = "Hourmeter,unix date OR date string,\n";
 static char update=0; 		//  1==write, 2==(deprecated currently,use profile)
-static char trigger_coils=0; 	
+static char trigger_coils=0; 	//static char vmultiplier=0;
 char polling=0; char just_EEPROM = 0; 
 static char warn=1; static char sil = 0; 
 static char searching=0; char raw=0; static const char maxLogs=6;
@@ -210,8 +211,9 @@ int main(int argc, char *argv[]) {
 	//char* ctime_s = NULL; ctime_s = malloc((size_t)128);  //ctime_s = ctime(&c_time);
 		
 	/**  EEPROM - defaults entered here are used for: creating new profiles when disconnected from charger, 
-	 ** 		the 'update' and 'update all' cmds [when configuration update_all_defaults is enabled..]
+	 ** 		the 'revert' and 'revert all' cmds [when configuration update_all_defaults is enabled..]
 	 **			defaults can be Floats or Float16, they are run thru chkProfile() similar to profile values. 
+	 ------------- ALL VOLTAGES MUST BE 12v BASED! They are multiplied for systems running @ >12v !---------
 	---------------------------------------------------------------------------------------------------------- */
 	//int eereserved[] = {0xE00B,0xE00C, 0xE00E,0xE00F, 0xE011,0xE012, 0xE014-19, 
 	//															(0xE020-21), 0xE028-2F, 0xE039-3F}; //--out of total
@@ -249,9 +251,9 @@ int main(int argc, char *argv[]) {
 		
 		//---LED Status:-----------------------------------:  (morningstar defaults,visually useful)
 		{0, 0xE030, "v",	"LED ChargingBulk G->G/Y",19110, .calc="f16"},		//(13.2968,13.45) charging/charged	
-		{0, 0xE031, "v",	"LED ChargingFull G/Y->Y",19073, .calc="f16"},		//--(13.00*,12.65) 100%
-		{0, 0xE032, "v",	"LED Charging Y->Y/R [65%]",19027, .calc="f16"},	//--(12.6484,12.30) 65%  
-		{0, 0xE033, "v",	"LED Charging Y/R->R [55%]",0, .calc="f16"},		//--(0,12.14) 58%
+		{0, 0xE031, "v",	"LED ChargingFull G/Y->Y",19073, .calc="f16"},		//--(13.00*,12.65) 	standard:100%
+		{0, 0xE032, "v",	"LED Charging Y->Y/R ",19027, .calc="f16"},			//--(12.6484,12.30) standard:65%  
+		{0, 0xE033, "v",	"LED Charging Y/R->R ",0, .calc="f16"},				//--(0,12.14) 		standard:58%
 		/*/---MultiCharger settings:------------------------: // */
 		 {0,0xE034, "x", "Modbus net ids",1},  {0,0xE035, "x", "Meterbus net ids",1},  
 		 {0,0xE036, "v", "Fixed Vmp",0, .calc="f16"}, {0,0xE037,"x","Vmp fraction of Voc",0, .calc="f16"}, //fraction=(0 to 0.99)
@@ -501,6 +503,13 @@ int main(int argc, char *argv[]) {
 	 	//---maybe in future create special data export just for coils..
 	}  
 	
+	/* ----- Parse External Settings files ----- */
+	//open, validate, configure global settings
+	///////////////////////////////////////////////
+	//--Default Max/Min: (...divide by vmultiplier if accepting>12v inputs.)
+	maxV=maxV>18?18.0:(maxV<12?18:maxV); 		//--max acceptable v. safety check
+	minV=minV>13?11.5:(minV<10.1?11.5:minV); 	//--min acceptable v. safety check
+	
 	/*/--Date / Time:---------------------------------------------------------------------------------:*/
 	//----Add time to date:
 	snprintf(sbuf,(size_t)80,"%s%s",date_format, " %H:%M:00"); 
@@ -610,12 +619,10 @@ static void *cdLabels[] = { &&cacheDParse0, &&cacheDParse1, &&cacheDParse2 }; //
 //--debug logs block:
 if (strcmp(action,"debugc")==0) { // && debug > 2
 	/* --- Log Cache Debug ---------------------------------------- */
-	printf(">>LOG CACHE DEBUGGING------------------\n");
+	printf(">>OFFLINE DEBUGGING------------------\n");
 	return 1;
 }	
-	
-	
-	
+
 	/*/###############################----PROFILES----##########################################-:   */
 	//--Updating Using builtin Defaults:--//--Build before backup Loop.. parse .f_defs into profileIn struct:  
 	//------------mrk == 1 (updates[]), == 8 update_all_defaults, == 5 (create profile)
@@ -648,7 +655,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	/*/--Profile template:--------------------------------------------------------:/*/
 	//---Create new profile, backup, or backup before updating w/profile:
 	if (strcmp(action,"backupprofile")==0) { //|| mrk==5  //mrk: 8==revertAll, 1==revert to updates[], 5==new prof, 
-		//-:mrk==5? 	profile="new", offline(action="bkupp") OR online(action="current_settings"=>"bkupp")  
+		//-:mrk==5? profile="new", offline(action="bkupp") OR online(action="current_settings"=>"bkupp")  
 		//-:backup cmd: (profile="print",action="current_settings"=>"bkupp")
 		//--Defaults or Current EEPROM:---------------------------: 
 		if (strcmp(profile,"new")==0) { display=1; createProfile("new", nume,eprom,ctime_s); return 0; } 
@@ -672,10 +679,10 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 //if (action[0] && strcmp(action,"current_settings")==0){action="backupprofile"; goto print_out_profile;}//offline debug!!
 	if (strcmp(action,"profile_update")==0 || strcmp(action,"validate")==0) { //backup FIRST!!
 		//------check dipsChargeMode() first:
-		//uint16_t mode = 0; readModbus(ctx, 0x003A, 1, &mode);
-		//mode = dipsChargeMode(mode); //printf(">dips mode: %hu\n",mode); return 0;
+		uint16_t mode = 0; readModbus(ctx, 0x003A, 1, &mode);
+		mode = dipsChargeMode(mode); //printf(">dips mode: %hu\n",mode); return 0;
 		//--if not set to 'custom' print overwrite & backup warnings: (do in createProfile() too)
-		//if (mode!=8) {}
+		if (mode!=8) { printf("!WARNING! Updates are disabled if charger not in custom settings mode.\n\n"); return -1; }
 
 		//--Build Update using profile:		
 		//----chkProfile() opens and preparses data into profileIn[]. 
@@ -694,7 +701,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			
 			//--Match profile update to supported eprom[] registers:  
 			int e = getIndex(profileIn[i].hexa,nume,eprom); 
-			if (e == -1){ fprintf(stderr,"\n***Unsupported: 0x%04X [%d] *skipping!*\n", profileIn[i].hexa,profileIn[i].hexa+1);  
+			if (e == -1){ fprintf(stderr,"\n***Unsupported: 0x%04X [%d] *skipping!*\n",profileIn[i].hexa,profileIn[i].hexa+1);
 				continue; }
 			//--into Float value:--------------: (builtin==mrk)
 			if (!mrk) profileIn[i].value.fv = atof(profileIn[i].sv); //--save float!  strtol(token,NULL,10/16)
@@ -704,10 +711,10 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			if (parseProfileValue("up", i,e,eprom) < 0) continue;  //just send eprom[ii]
 			//--Add to global updates[]:--------------------------------------------------------: 
 			else { updates[upi] = profileIn[i].hexa;   upi++; 
-				/*/--Append user description? (do separately from update?):-----------------:
-				if (profileIn[i].string[0]) {  //append? or replace?
-					strncpy(eprom[e].string,appendStr(3,eprom[e].string," ",profileIn[i].string), sizeof(eprom[e].string)/sizeof(eprom[e].string[0]) );	//--escape string for...[?]
-				} // */
+				/*/--Custom user description? (do separately from update?):-----------------: */
+				if (debug && profileIn[i].string[0]) {  //replace?appendStr(3,eprom[e].string," ",profileIn[i].string)
+					strncpy(eprom[e].string, profileIn[i].string, sizeof(eprom[e].string) );
+				} //debug only for now... * /
 				if (display) { //
 					snprintf(bufs,sizeof(bufs),"%f",profileIn[i].value.fv);  	//
 					printf("0x%04X =  %s %s [%d],\t\"%s\"\n", profileIn[i].hexa, strReplace(".000000",".00",bufs), 
@@ -738,7 +745,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		//printf("\n---Profile debug: debug=%d, update=%d, action=%s, profile=%s\n\n", debug,update,action,profile);
 		update=debug<3?1:0;  //sil=0; action = "updating"; 
 		skip_RAM=0; just_EEPROM=1;  display=1; debug=1; mrk=0;//:(builtin==8)
-		if (debug) printf("---Updates debug: debug=%d, update=%d, action=%s, profile=%s\n\n", debug,update,action,profile);
+		if (debug>1) printf("---Updates debug: debug=%d, update=%d, action=%s, profile=%s\n\n", debug,update,action,profile);
 		//if (debug>1) return 0;//debug!!!!!!!!!!!!!!!!!!!
 	} //end profile update parse.
 	
@@ -755,7 +762,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	setting_s = (! update)?(strcmp(action,"logs")==0?"Logs":"Settings"):(update==2?"*Reverting Defaults*":"*Updating*");
 	if (display && strcmp(action,"current_settings")!=0) { //--(skip for backups)
 		printf("################################################################\n"
-			"## Modbus C MStarProMPPT - %s - [%s] \n"
+			"## Modbus C MCProStarMPPT - %s - [%s] \n"
 			"################################################################\n", setting_s, ctime_s);
 		/* #-------------------------CHARGER STATUS ID DATA----------------------------# */
 		//--read ------------------CHARGER STATUS:----------------:
@@ -918,8 +925,8 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				for (int y=0; y < upN; y++) { if (!updates[y]) break;	//no more.
 					if (eprom[e].hexa==updates[y]) { this_one = 1; } }
 				uint16_t new_value[1];  debug = debug?debug:1; //--turn on for updates..
-				if (this_one) {	//--Update!----------------- 
-					   printf("\t ...Updating:...\n");
+				if (this_one) {	//--Update!----------------- && *dp!=eprom[e].f_new)
+					   //printf(">...Updating:...\n");
 					//--Pre Update value:-------: 
 					eprom[e] = parseValue(&eprom[e], datas[z]);	 
 					printOUT (0, eprom[e].typ, &eprom[e]); //
@@ -927,7 +934,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 					new_value[0] = writeUpdate (ctx, &eprom[e]); //--:write! 
 					//--Test if update success ----------------:
 					if ((new_value[0] == datas[z]) & display) {    //----updated to same value
-						printf(">Wrote same value to [ 0x%04X ]...\n",eprom[e].hexa); //eprom[ii].updated = 2;
+						printf(">0x%04X ...(rewrote same value.)\n",eprom[e].hexa); //eprom[ii].updated = 2;
 					} else if (new_value[0] == eprom[e].f_new) { 
 						eprom[e].updated = 1;   if (debug) printf("\n"); //hack fix?
 					//--Error writing:-------------------------:
@@ -937,7 +944,8 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 					} 
 					//--Pass new value: instead of previous---:
 					this_one = 0; datas[z] = new_value[0]; 
-			}	}
+				} //else { printf(">Skipping writing same value...\n"); }	
+			}
 			// * /--Combines LO-Hi:------------: EEPROM order is LO HI !!! RAM is opposite!
 			if (strncmp(eprom[e].calc,"comb",4)==0) { eprom[e].value.lv = combine(eprom[e].hexa, datas[z], nume,eprom); 
 				if (eprom[e].value.lv == -1){ eprom[e].value.lv = 0; }  
@@ -945,7 +953,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			//--Parse data values into register struct:
 			eprom[e] = parseValue(&eprom[e], datas[z]); 
 			//--Print out:
-			if (strcmp(action,"current_settings")!=0) printOUT (z, eprom[e].typ, &eprom[e]); 
+			if (!sil && strcmp(action,"current_settings")!=0 && !update) printOUT (z, eprom[e].typ, &eprom[e]); 
 			e++; z++;
 		}  
 	} //return 1; // */
@@ -1143,7 +1151,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			//--get oldest log:---------:		//latest wraps around to oldest.
 			readLogs(ctx,startX,(short)2,logs);
 			if (logs[1].log[0].value.lv) { oldestLog=logs[1].log[0].value.lv;  } //-:oldest hrmtr
-			 if (debug) printf("\n>Oldest log hourmeter found: %ld\n", oldestLog);
+			 if (debug) printf("\n>Oldest log hourmeter: %ld\n", oldestLog);
 			if (oldestLog) { 
 				if (logOpt==4) { start=logs[1].log[0].hexa; tnum=255; //-:oldest addr hexa (return ALL logs)
 					strncpy(strbuf, "Reading All logs ...", sizeof(strbuf)/sizeof(strbuf[0])); } 
@@ -1158,7 +1166,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			snprintf(sbuf, sizeof sbuf, "(%ld hours)", lbuf); //-:use sbuf to print lbuf_input
 			snprintf(bufs, sizeof bufs, "Now: %ld , unix: %ld ,", now,c_time); //lbuf_input !!!
 			printf("\n\n>Daily Logs:----------------------------------------------------:\n"
-				"--Reminder: Log dates are based on continual use from today--\n%s date buffering: [%s] %s\n%s retrieving %d logs\n", 
+				"--Reminder: Log dates are based on continual use from today--\n%s :date buffering: [%s] %s\n%s retrieving %d logs\n", 
 				(debug?bufs:""), (lbuf_input?"on":(logCache[0].xt?"cache":"off")),
 				(lbuf_input?sbuf:""), strbuf, tnum); 
 			if (debug>2) printf("\n[%d]>Reading Log: 0x%04X, searching for %ld\n\n",debug,start,search);
@@ -1312,7 +1320,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			}
 			
 			/*/--Print Out:---------------------------------------------------------------//:sorting? */
-			if (debug>2) {  printf(">Log [%d]-----------------------:\n",a);  //:debug  
+			if (debug>2 || raw) {  printf(">Log [%d]-----------------------:\n",a);  //:debug  
 				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); }  
 			} else {
 				// * //--Formated:--------------------------------------------: * /
@@ -1532,7 +1540,7 @@ static uint16_t writeUpdate(modbus_t *ctxx, RamObj *inStruct) {
 	int rc;	//--#link already live!
 	//--Write Update:-------------------------------------: 
 	if (update && debug < 3) { //--write NEW registers:
-	 	printf(">!...writing new:!!!\n");
+	 	if (!sil){ printf(">0x%04X ...Updating value!:\n", inStruct->hexa); }
 		rc = modbus_write_register(ctxx, (int) inStruct->hexa, inStruct->f_new);  
 		 if (rc == -1) { fprintf(stderr, "%s\n", modbus_strerror(errno)); }
 	} else { printf(">not writing....[ 0x%04X ] ", inStruct->hexa); }
@@ -2317,7 +2325,7 @@ const char* chkProfile(char*doo, char* profileName) {
 			trimP(str);
 			if (tmp==0 || strncmp(str,"#",1)==0 || strncmp(str,"//",2)==0 || !str[0]) { tmp++; continue; }
 			//--Trim end-of-line comments:
-			size_t i = strcspn(str,"#"); if (i && i<strlen(str)){ str[i]='\0'; } //printf("%lu!",i); 
+			size_t i = strcspn(str,"#"); if (i && i<strlen(str)){ str[i]='\n'; } //printf("%lu!",i);
 			
 			//--first value: EEPROM register PDU---------------------------------------:
 			char* token = strtok(str,",");
@@ -2356,8 +2364,8 @@ const char* chkProfile(char*doo, char* profileName) {
 				if (token) { trimP(token); result=strlen(token); }
 				else {result = 0;}   
 				//--Profile: Add new register description/notes from profile:
-				//---User description string:-----------:filtering?!!!!!!!!!
-				if (result) { strncpy(profileIn[st].string, token, (size_t)101); //--strncat()? onto full description?
+				//---User description string:-----------:
+				if (result) { strncpy(profileIn[st].string, escapeStr("str",token), (size_t)101); //!filtering!!
 					if (debug>3) printf("->[%s]", token); //--DEBUG!
 				}
 			st++; tmp++; //tmp not really used much...
@@ -2390,14 +2398,22 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 		else if (profileIn[pi].value.fv==0) { eprom[ep].f_new = 0; } 
 		else  { //---float? - needs converting:  
 			profileIn[pi].basev = fl_to_half(profileIn[pi].value.fv); }
-						
+		
+		/* !!!!!!!!!!!!!!!!!!!! Voltage Multiplier !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
+		if (strcmp(eprom[ep].unit,"v")==0 && profileIn[pi].value.fv!=0 && vmultiplier>1) { //-: []
+			//--if accepting 24v+ values down shift here...	
+			profileIn[pi].value.fv = profileIn[pi].value.fv/vmultiplier;
+			profileIn[pi].basev = fl_to_half(profileIn[pi].value.fv);
+		} //  */
+		
 			///* -- FIX NULL F16s!!! --    // * /
 		/* /-/--Last F16 Checks, Assign .f_new:-----------------------------:  error on NaN  */
 		//--Voltage safety check?--  [18700==10.09]    //ranges: 10...30 or 0 (multiply by battery multiplier?)
-		if (strcmp(eprom[ep].unit,"v")==0 && (profileIn[pi].basev < 18700 || (maxV && profileIn[pi].value.fv > maxV)) 
-														&& profileIn[pi].value.fv != 0) { // && eprom[ep].hexa != 0xE01A
-			skip=1; fprintf(stderr," ! 0x%04X [ %s ] !WARNING! new voltage is very low or very high %f! == %hu\n",
-								profileIn[pi].hexa,profileIn[pi].sv, profileIn[pi].value.fv, profileIn[pi].basev); 
+		if ( strcmp(eprom[ep].unit,"v")==0 && profileIn[pi].value.fv != 0	//-- && eprom[ep].hexa != 0xE01A
+				&& ((minV && profileIn[pi].value.fv < minV) || (maxV && profileIn[pi].value.fv > maxV)) ) { 
+			skip=1; fprintf(stderr," ! 0x%04X [ %s ] !WARNING! new voltage is very low or very high %f! == %hu\n"
+									"!\t voltages must be between %.2f and %.2f !\n",
+						profileIn[pi].hexa,profileIn[pi].sv, profileIn[pi].value.fv, profileIn[pi].basev,minV,maxV); 
 		//--Scaling/Ranges: celcius ()------------------------------------------:  //NULL is ok???
 		} else if ( strcmp(eprom[ep].unit,"C") == 0 && (profileIn[pi].value.fv < -128 || profileIn[pi].value.fv > 127) ) { 
 			skip=1; fprintf(stderr," ! 0x%04X = %s %s !WARNING! new temperature [ %f ] is not supported!\n", 
@@ -2410,6 +2426,7 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 		} else if (eprom[ep].hexa!=0xE026 && profileIn[pi].value.fv!=0 && profileIn[pi].basev < 15360) {
 			skip=1;	fprintf(stderr," ! 0x%04X [ %s ] [%hu] !WARNING! new value is very low!\n", 
 								profileIn[pi].hexa,profileIn[pi].sv,profileIn[pi].basev);
+		
 		//--Set update value!:--------------------------------: f_new == uint16_t!!!
 		} else if (profileIn[pi].value.fv!=0) { eprom[ep].f_new = profileIn[pi].basev; }
 	} 
@@ -2590,11 +2607,13 @@ static char* escapeStr(const char* doo, char* string) {
 		nStr = strReplace("/","",nStr); //replace w/regex
 	}
 	//--escape specifics: //--regex escape: ["\\] and other js specifics..!
-	if (strcmp(doo, "json")==0 || strcmp(doo, "cvs")==0) {  
+	else if (strcmp(doo, "json")==0 || strcmp(doo, "cvs")==0) {  
 		nStr = strReplace("\n","\\n",string);
 		nStr = strReplace("\t","\\t",nStr);
 		nStr = strReplace("\"","\'",nStr);  //or &quote
 	}
+	//--escape user [description] strings: (translations)
+	else if (strcmp(doo, "str")==0) {  nStr = strReplace("#","",string); }
 	//--Search / Replace:
 	
 	//--return string:----(returned string is not! same size)
