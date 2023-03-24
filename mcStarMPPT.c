@@ -682,7 +682,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		uint16_t mode = 0; readModbus(ctx, 0x003A, 1, &mode);
 		mode = dipsChargeMode(mode); //printf(">dips mode: %hu\n",mode); return 0;
 		//--if not set to 'custom' print overwrite & backup warnings: (do in createProfile() too)
-		if (mode!=8) { printf("!WARNING! Updates are disabled if charger not in custom settings mode.\n\n"); return -1; }
+		if (mode!=8) { printf("!WARNING! Updates are disabled if charger not in custom settings mode.\n\n"); warn=1; }
 
 		//--Build Update using profile:		
 		//----chkProfile() opens and preparses data into profileIn[]. 
@@ -690,7 +690,8 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		memset(&updates[0], '\0', sizeof(updates)); short upi=0; short upt=0; setbuf(stdout, NULL);
 		for (int i=0;i < UPDATEABLE;i++) { 
 			//----Take in profileIn[i] , Output updates[] & eprom[e].f_new ! --------------: 
-			if (!profileIn[i].hexa) { printf(">End of inputs..\n"); break; } upt++; //:total updates marker 
+			if (!profileIn[i].hexa) { if (!sil){ printf("%s\n",(debug?">End of inputs..":"")); } break; } 
+			upt++; //:total updates marker 
 			//--Skip//Check for security locked registers:--//
 			if (locked_registers[0]) {  char is=0; 
 				for (int *d = &locked_registers[0]; d < &locked_registers[UPDATEABLE]; d++) { 
@@ -744,7 +745,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		/*/--Update EEPROM with profile: --------------------------------------- */
 		//printf("\n---Profile debug: debug=%d, update=%d, action=%s, profile=%s\n\n", debug,update,action,profile);
 		update=debug<3?1:0;  //sil=0; action = "updating"; 
-		skip_RAM=0; just_EEPROM=1;  display=1; debug=1; mrk=0;//:(builtin==8)
+		skip_RAM=0; just_EEPROM=1;  display=1; mrk=0;//:(builtin==8)
 		if (debug>1) printf("---Updates debug: debug=%d, update=%d, action=%s, profile=%s\n\n", debug,update,action,profile);
 		//if (debug>1) return 0;//debug!!!!!!!!!!!!!!!!!!!
 	} //end profile update parse.
@@ -887,7 +888,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			//--Parse data values into register struct:
 			ram[e] = parseValue(&ram[e], datas[z]); 
 			//--Print out:
-			if (!just_EEPROM) printOUT (z, ram[e].typ, &ram[e]); //
+			if (!just_EEPROM && debug) printOUT (z, ram[e].typ, &ram[e]); //
 			e++; z++;
 		}  
 	} //
@@ -906,7 +907,6 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	if (display && debug>1 && strcmp(action,"current_settings")!=0) { 
 		printf("\n--------------------------------------------------------------------" 
 			"\nSTARTING Bulk EEPROM Read: \t[ %zu ]\n", nume); }
-	if (just_EEPROM && debug<1) { debug=1; } //-:needed
 	//--Loop bulk registers array:
 	for(short i=0;i<16;i++) { if (!bulk[i].i) break; //--endof (bulk[].start will break on 0x0000 !!)
 		const int dsize = bulk[i].i;		uint16_t datas [dsize];   
@@ -918,15 +918,15 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		int e = getIndex(bulk[i].start,nume,eprom);  short z=0;
 		//--Assign data to eprom struct in order... (replace datas[z] with *dp !)
 		for (uint16_t *dp = &datas[0]; dp < &datas[dsize]; dp++) { 
+			char this_one = 0;
 			// *------ Write New EEPROM Value ---------------------------------- * /
 			if (update && strcmp(action,"current_settings")!=0) { 	
-				char this_one = 0;  int upN = UPDATEABLE; //-redundant
+				uint16_t new_value[1];  int upN = UPDATEABLE; //-redundant
 				//--check if data is set for updating: --------
 				for (int y=0; y < upN; y++) { if (!updates[y]) break;	//no more.
 					if (eprom[e].hexa==updates[y]) { this_one = 1; } }
-				uint16_t new_value[1];  debug = debug?debug:1; //--turn on for updates..
 				if (this_one) {	//--Update!----------------- && *dp!=eprom[e].f_new)
-					   //printf(">...Updating:...\n");
+					printf(">0x%04X Updating...\n",eprom[e].hexa);
 					//--Pre Update value:-------: 
 					eprom[e] = parseValue(&eprom[e], datas[z]);	 
 					printOUT (0, eprom[e].typ, &eprom[e]); //
@@ -943,7 +943,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 						if (debug) { printf(">Problem parsing update!\n"); return -1; } //if not: ...
 					} 
 					//--Pass new value: instead of previous---:
-					this_one = 0; datas[z] = new_value[0]; 
+					datas[z] = new_value[0]; 
 				} //else { printf(">Skipping writing same value...\n"); }	
 			}
 			// * /--Combines LO-Hi:------------: EEPROM order is LO HI !!! RAM is opposite!
@@ -953,7 +953,8 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			//--Parse data values into register struct:
 			eprom[e] = parseValue(&eprom[e], datas[z]); 
 			//--Print out:
-			if (!sil && strcmp(action,"current_settings")!=0 && !update) printOUT (z, eprom[e].typ, &eprom[e]); 
+			if ((!update && (just_EEPROM || (debug && strcmp(action,"current_settings")!=0 && !sil))) || 
+						this_one || (update && debug)) { printOUT (z, eprom[e].typ, &eprom[e]); }
 			e++; z++;
 		}  
 	} //return 1; // */
@@ -1320,7 +1321,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			}
 			
 			/*/--Print Out:---------------------------------------------------------------//:sorting? */
-			if (debug>2 || raw) {  printf(">Log [%d]-----------------------:\n",a);  //:debug  
+			if (debug>2 || raw) {  printf("\n>Log [%d]-----------------------:\n",a);  //:debug  
 				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); }  
 			} else {
 				// * //--Formated:--------------------------------------------: * /
@@ -1517,7 +1518,7 @@ static void readModbus(modbus_t *ctxx, uint start, ushort length, uint16_t *data
 
 //const RamObj //--used w/ pollingOut..
 void upRegisters(modbus_t *ctxx, RamObj *inStructA, int num, int *registers, int rn) { //rn==# of registers
-	//--in-place editing of RamObj----------------: (ex: upRegisters(ctx, ram, num, 3hexaArray, 3);)
+	//--in-place editing of RamObj----------------------: (ex: upRegisters(ctx, ram, num, 3hexaArray, 3);)
 	uint16_t rdata[rn]; 	
 	//--Fill register struct-- 
 	for (int i=0; i<rn; i++) {
@@ -1540,7 +1541,7 @@ static uint16_t writeUpdate(modbus_t *ctxx, RamObj *inStruct) {
 	int rc;	//--#link already live!
 	//--Write Update:-------------------------------------: 
 	if (update && debug < 3) { //--write NEW registers:
-	 	if (!sil){ printf(">0x%04X ...Updating value!:\n", inStruct->hexa); }
+	 	if (!sil){ printf(">0x%04X [ %d ] ...Updating value...\n", inStruct->hexa,inStruct->f_new); }
 		rc = modbus_write_register(ctxx, (int) inStruct->hexa, inStruct->f_new);  
 		 if (rc == -1) { fprintf(stderr, "%s\n", modbus_strerror(errno)); }
 	} else { printf(">not writing....[ 0x%04X ] ", inStruct->hexa); }
@@ -1632,7 +1633,7 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 		else if (p<bulk[b].i){ bi+=p; total+=p; logx+=p; short px=logx; //-:start with logs[px]  
 			/*/--blank means logs hit cleared area:---------------- *///(size is b/t ~58 logs and ~2) 
 			leftovers=0; //-:-----Do NOT loop around to nulls again (if tnum is >logs)--------
-			if (debug>1){printf("readLogs %d: ...skipping forward...found %d\n",b,total);} 
+			if (debug){printf("readLogs %d: ...skipping forward...found %d\n",b,total);} 
 			/* -------- skip forward mini search loop ------------ */
 			uint16_t datalm[maxLogs*16]; char lx=0; 
 			char marker=0; start = bulk[b].start+(21*16); 
@@ -1753,7 +1754,7 @@ static short parseLogs(uint start, short logx, LogObj *logs, uint16_t datal[], s
 			
 			start++;
 			//--Debug Print out: 
-			if (debug>3) printOUT (x, 'z', &log[x]); //-
+			//if (debug>3) printOUT (x, 'z', &log[x]); //>4?
 		} 
 		/* -- ADD log to logs[] array: ---------------------- */
 		memcpy(logs[logx].log, log, sizeof(log)); 
@@ -2325,7 +2326,7 @@ const char* chkProfile(char*doo, char* profileName) {
 			trimP(str);
 			if (tmp==0 || strncmp(str,"#",1)==0 || strncmp(str,"//",2)==0 || !str[0]) { tmp++; continue; }
 			//--Trim end-of-line comments:
-			size_t i = strcspn(str,"#"); if (i && i<strlen(str)){ str[i]='\n'; } //printf("%lu!",i);
+			size_t i = strcspn(str,"#"); if (i && i<strlen(str)){ str[i]='\n'; } //'\0'; !!! printf("%lu!",i);
 			
 			//--first value: EEPROM register PDU---------------------------------------:
 			char* token = strtok(str,",");
@@ -2379,8 +2380,8 @@ const char* chkProfile(char*doo, char* profileName) {
 
 static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 	//--Globals: profileIn[pi]; 	Not Global (yet): eprom[ep]; 
-	//---if (update) eprom[ep].f_new == (uint16_t) profileIn[pi].value.fv (default) || (uint16_t) eprom[ep].f_def (if builtins)
-	//---else printing profile: eprom[ep].basev == EEPROM .basev || (uint16_t) eprom[ep].f_def
+	//---if (update) eprom[ep].f_new (uint16_t) == profileIn[pi].value.fv (default) || eprom[ep].f_def (if builtins)
+	//---else printing profile: eprom[ep].basev == EEPROM .basev || eprom[ep].f_def
 	char skip = 0; char non = -1;
 	
 	//--warn/error on overflow:
@@ -2391,17 +2392,17 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 	//---Convert Update Values: -------------------------------------------------:
 	if (strcmp(eprom[ep].calc,"f16")==0) { //--CONVERT TO F16! (volts,amps,temp-comp)
 		//---f16:--: labled & very high number: must be f16.
-		if (profileIn[pi].value.fv > 400) {  // && profileIn[pi].value.fv < 65535
-			profileIn[pi].basev = (uint16_t) profileIn[pi].value.fv; //!!!!!
+		if (profileIn[pi].value.fv > 400) {  //-f16 input
+			profileIn[pi].basev = (uint16_t) profileIn[pi].value.fv; //!
 			profileIn[pi].value.fv = F16ConvertToF32(profileIn[pi].basev);
-		} //-f16 input > 1
+		} //--zero:
 		else if (profileIn[pi].value.fv==0) { eprom[ep].f_new = 0; } 
-		else  { //---float? - needs converting:  
+		else  { //---float:--: needs converting:  
 			profileIn[pi].basev = fl_to_half(profileIn[pi].value.fv); }
 		
 		/* !!!!!!!!!!!!!!!!!!!! Voltage Multiplier !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
 		if (strcmp(eprom[ep].unit,"v")==0 && profileIn[pi].value.fv!=0 && vmultiplier>1) { //-: []
-			//--if accepting 24v+ values down shift here...	
+			//--if accepting 24v+ values & vmultiplier: down shift here...	
 			profileIn[pi].value.fv = profileIn[pi].value.fv/vmultiplier;
 			profileIn[pi].basev = fl_to_half(profileIn[pi].value.fv);
 		} //  */
@@ -2687,19 +2688,19 @@ void printOUT (int ind, char type, RamObj *inStruct) {
 	///--create buffer for inStruct 
 	char buf[600]=""; //!!.sv=255!.string=255!!
 	char bufValue[19] = "";  //char bufType[3] = ""; 
-	//--skip printout function: hack 
-	if ((!display && !just_EEPROM) || !debug) return;
+	//if ((!display && !just_EEPROM) ) return;	//--skip printout function: hack   sil || !debug
+	//--Updates:
+	short updated = inStruct->updated; 
+	//if(update && !debug && !updated){ return; }
+	//printf("%s", (updated?"*":"")); //mark updates!? 
 	
-	//--Create buffer for both stdout and debug file: printout below
-	//--Logs: +log to file????
+	//--Logs: 
 	char doo[5] = "";  //---little hack to parse logs:
 	if (type=='z') { type = inStruct->typ; strcpy(doo,"logs");  }
 	
 	//--assign current values: //combines==inStruct->lv (used to be: inStruct->dv)
 	int dvalue = (int) inStruct->basev; //-:For raw or debug!
-	short updated = inStruct->updated; 
-	printf("%s", (updated?"*":"")); //!!simpler!
-	//snprintf(bufS, sizeof(bufS), "%s %s", inStruct->string, ((update && updated)?"(NEW) ":""));
+	
 	//--Format/Print Out line:------------------------------------------------------------------------:
 	//--Floats:-----------------------------------------v,amps,C,etc.. *MOST!---------- //%lf ? - uint16_t
 	if (strcmp(inStruct->calc,"f16")==0) {  	//else if (type == 'f')  {   }	
@@ -2717,8 +2718,8 @@ void printOUT (int ind, char type, RamObj *inStruct) {
 		if (raw) snprintf(bufValue, sizeof(bufValue), "%d", dvalue); //raw
 		else snprintf(bufValue, sizeof(bufValue), "%d", inStruct->value.dv);   
 		//debug:
-		snprintf(buf, sizeof(buf), "rd%d:\t", ind);
-		//---print out raw data----------: (int) inStruct->hexa, inStruct->value.dv   //strcpy(bufType, "rd");
+		snprintf(buf, sizeof(buf), "rd%d:\t", ind);  //strcpy(bufType, "rd");
+		//---print out raw data----------: 
 		printf("%s 0x%04X [ %s %s ] %s", (debug>1?buf:""), (int) inStruct->hexa, bufValue, inStruct->unit, inStruct->string);
 		
 	//--:Bitfields, States, Combo calcs:(modbus_get_float_abcd()), ----------------------------------://
@@ -2741,15 +2742,14 @@ void printOUT (int ind, char type, RamObj *inStruct) {
 				printf("%s 0x%04X [ %x %s ]  %s\n", (rh%d:\t), (int) inStruct->hexa, dvalue, 
 						inStruct->unit, bufS); // */
 		//---Print out State, ...-----------: //!!!Problem!!!
-		} else {
-		//strcpy(bufType, "cd"); buf=->value.sv; bufValue+=(5,dvalue," ",->unit," ",->value.sv)
-			snprintf(bufValue, sizeof(bufValue), "cd%d:\t", ind);	//--:debug
+		} else {  //buf=->value.sv; bufValue+=(5,dvalue," ",->unit," ",->value.sv)
+			snprintf(bufValue, sizeof(bufValue), "cd%d:\t", ind);	//--:debug  //strcpy(bufType, "cd"); 
 			printf("%s 0x%04X [ %d %s %s ]  %s", (debug>1?bufValue:""), (int) inStruct->hexa, dvalue, 
-						inStruct->unit, inStruct->value.sv, inStruct->string);  //bufS   *%x better?
+						inStruct->unit, inStruct->value.sv, inStruct->string);  //*%x better?
 	}	}
 	else { //---print out raw data----------: 	//
-		//snprintf(bufValue, sizeof(bufValue), "%d", inStruct->basev); strcpy(bufType, "rr"); 
-		snprintf(bufValue, sizeof(bufValue), "rr%d:\t", ind);	//--:debug
+		//snprintf(bufValue, sizeof(bufValue), "%d", inStruct->basev);
+		snprintf(bufValue, sizeof(bufValue), "rr%d:\t", ind);	//--:debug strcpy(bufType, "rr"); 
 		printf("%s 0x%04X [ %ld %s ] %s", (debug>1?bufValue:""), (int) inStruct->hexa, (inStruct->value.lv? inStruct->value.lv:(long)dvalue), inStruct->unit, inStruct->string); 
 	}
 	//--end line:
