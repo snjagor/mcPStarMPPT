@@ -4,14 +4,14 @@ togB="";
 #--possible inputs: logs:hrmtr,start addr. profiles:testing. 
 while [ -n "$1" ]; do
 	if [ "$1" = "-b" ]; then 
-		togB=""; #"-b"; Off ! !
+		togB=""; #"-b"; Off !  (unused opt)
 	elif (( ($1 > 0) && ($1 < 255) )); then
 		buff="$1";
 	fi
 	shift; 
 done
 i=$buff; x=0;
-cmd0="./PStarMPPT_rollSurrette"; #--:cmd  debug
+cmd0="./mcPStarMPPT"; #--:cmd  debug
 
 echo;echo starting testing - with buffer of "$buff";
 #----------------------------------------
@@ -74,8 +74,9 @@ cat ../profiles/new.txt
 
 cmd="$cmd0 profile create"; #testing
 echo "##---cmd: $cmd ---"; $cmd; echo;echo '-----------------------------------------------------';echo;echo; #-
-mv ../profiles/new.txt ../profiles/testNow.txt
-cmd="$cmd0 profile validate testNow"; #testing
+#mv ../profiles/new.txt ../profiles/testNow.txt
+#...uncomment & change some test value...
+cmd="$cmd0 profile validate new"; #testing
 echo "##---cmd: $cmd ---"; $cmd; echo;echo '-----------------------------------------------------';echo;echo; #-
 ##--update:... after updates skip RAM? print just_EEPROM & display?
 

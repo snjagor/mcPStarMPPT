@@ -1,6 +1,6 @@
 --- The Artistic License 2.0 ---
 
-This software is Copyright (c) 2023 by Sunja Goldenrose.
+This software is Copyright (c) 2023 by Sunja Goldenrose. 
 
 This is free software, licensed under:
 
