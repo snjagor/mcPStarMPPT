@@ -1,4 +1,4 @@
-/*  * Modbus C for: Morningstar ProStar MPPT______________________________________________
+/*  * Modbus C for: Morningstar® ProStar MPPT______________________________________________
  *  * This program is OpenSource: released under Artistic-2.0 license
  *  ****************** by sunja AT centerflowing.com 2023 **********************
  * correct way: [-fsyntax-only : Only run the preprocessor, parser and type checking stages.]
@@ -46,6 +46,7 @@ Notes:
 #define CUPDATEABLE 14 	/*  */
 #define UPDATEABLE 37 	/*  */
 #define MSMPPT    0x01	/* Default modbus address of the MPPT */ //---:[0xE034] */
+#define VERSION   0.98
 int MAX_CACHE_SIZE = 200000;		//-:max file size before rebuilding
 
 /* //---------------------CONFIGURATION---------------------------------------//: */
@@ -344,26 +345,30 @@ int main(int argc, char *argv[]) {
 	//----------------------------------------------------------------------------------- */
 	{	 short i = 1; //--argv[0] is program name.
   	 while (i < argc) { //printf("\t%d>arg[ %s ]\n", i, argv[i]);
-	    if (strcmp(argv[i], "-h")==0) { printf("\n________ProStar MPPT Charger Open Controller_______________________\n" 
+	    if (strcmp(argv[i], "-h")==0) { printf("\n__________OpenSource ProStar* MPPT Charge Controller Software_____________\n" 
 			"\n %s (no options = default display output)\n\n"
 			" %s [output|control options] [update|logs options]\n\n"
 			"Output Options:\n\t poll, json, json+ (display info), debug, debug+ (verbose debug), eeprom, -s,\n"
-				"\t debugn (to stdout), raw (output raw float16 values)\n\n"
+				"\t debugn (to stdout), raw (output raw float16 values)\n\n"  //, -d (toggle display screen on/off)
 			"Control Options:\n\t reboot,   EQ [ON | OFF],\n"
 				"\t reset_charge (kwh & Ah resetables), reset_totals,\n\t reset_all (all resetables), resetC (custom)\n\n"
-			"Update Options:\n\t update  (using default profile or built-in values) (disabled by default), \n"
+			"Update Options:\n\t update  : (uses default profile if set), \n"
 				"\t profile [nameof | validate nameof | create | backup]\n"
-				"\t\t profile create - will use built-in defaults if offline, otherwise live values\n\n"
+				"\t\t profile create - will use built-in defaults if offline, otherwise live values\n"
+				"\t revert  : update using values built-in during compilation (disabled by default)\n\n"
 			"Daily Logs:\n\t logs n [options] [start x || days x || hrs x]\n"
-				"\t -  n being: number-to-return, x = [start addr || days ago || hrs hourmeter]\n"
+				"\t\t n being: number-to-return, x = [start addr || days ago || hrs hourmeter]\n"
 				"\t Options: \n"
 				"\t\t-b n | --buffer n  :buffer log dates with n hours\n"
 				"\t\t--debug  :additional log debug output\n" //-:debug=2 or gt
-				"\t Output options: can be specified before logs cmd..\n"
-				"\t 'logs all' will read All logs from charger, upto max of 255.\n\n"
+				"\t 'logs all'  : will read All logs from charger, upto max of 255.\n"
+				"\t Output options: can be specified before logs cmd..\n\n"
 			"Utilities:\n\t convert [float value]   (...to F16)\n"
-				"\t convert f16 [F16 value] (...to float)\n\n*(see readme file for more info)\n\n"
-			"\n____*_*_* OpenSource Artistic-2.0 license © 2023 by sunja - centerflowing.com *_*_*____\n\n",argv[0],argv[0]); 
+				"\t convert f16 [F16 value] (...to float)\n\n"
+				"\t-v   print program version number and info.\n"
+				"\n*(see readme file for more info) -- version %.2f --\n"
+				"*(ProStarMPPT® is registered to Morningstar Corp.)\n"
+			"\n____*_*_* OpenSource Artistic-2.0 license © 2023 by sunja - centerflowing.com *_*_*____\n\n",argv[0],argv[0],VERSION); 
 			exit(0); } 
 		if (strcmp(argv[i], "json")==0) { json=1; display=0; }   
 		else if (strcmp(argv[i], "json+")==0) { json=1; display=1; } 
@@ -450,6 +455,8 @@ int main(int argc, char *argv[]) {
 		else if (strcmp(argv[i], "eeprom")==0) { just_EEPROM = 1; display=0; } 
 		//--numeric exit errors:
 		else if (strcmp(argv[i], "-s")==0) {  sil = 1;  }
+		//--toggle display:
+		//else if (strcmp(argv[i], "-d")==0) {  display = display?0:1;  }
 		//--Logs:
 		else if (strcmp(argv[i], "logs")==0) {  action = "logs"; i++; if (!argv[i]) return -1;
 			//if (strcmp(argv[i],"cache")==0) { action = "debugc"; i++; mrk=5; break; } //mrk debug!!!!
@@ -495,6 +502,13 @@ int main(int argc, char *argv[]) {
 				v16=fl_to_half(vf); 	//--"... fl_to_half[ ],  F32ConvertToF16[ %hu ]", F32ConvertToF16(vf)
 				printf(">F16 of [%f]: %hu \n\n",vf,v16); }
 			return 0; } 
+		//
+		else if (strcmp(argv[i], "-v")==0) { printf("\n%s \n--- ProStarMPPT* Opensource Charge Control Software ---\n"
+			"-----------------------------------------------------------\n"
+			" release version %.2f\n-----------------------------------------------------------\n"
+			"____*_*_* OpenSource Artistic-2.0 license © 2023 by sunja - centerflowing.com *_*_*____\n"
+			"*ProStarMPPT® is registered trademark to Morningstar Corp.\n\n",
+			argv[0], VERSION); return 0; }
 		//--next arg:
 		i++; if (i > 4) break;
 	 }
@@ -904,7 +918,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		else { y++; bulk[y].start = eprom[ii].hexa; bulk[y].i = 1; x=1; }  
 	} 
 	
-	if (display && debug>1 && strcmp(action,"current_settings")!=0) { 
+	if (display && debug && strcmp(action,"current_settings")!=0) { 
 		printf("\n--------------------------------------------------------------------" 
 			"\nSTARTING Bulk EEPROM Read: \t[ %zu ]\n", nume); }
 	//--Loop bulk registers array:
@@ -1152,7 +1166,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			//--get oldest log:---------:		//latest wraps around to oldest.
 			readLogs(ctx,startX,(short)2,logs);
 			if (logs[1].log[0].value.lv) { oldestLog=logs[1].log[0].value.lv;  } //-:oldest hrmtr
-			 if (debug) printf("\n>Oldest log hourmeter: %ld\n", oldestLog);
+			 if (debug) printf(">Oldest log hourmeter: %ld\n", oldestLog);
 			if (oldestLog) { 
 				if (logOpt==4) { start=logs[1].log[0].hexa; tnum=255; //-:oldest addr hexa (return ALL logs)
 					strncpy(strbuf, "Reading All logs ...", sizeof(strbuf)/sizeof(strbuf[0])); } 

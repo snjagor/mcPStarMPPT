@@ -15,12 +15,17 @@ cmd0="./mcPStarMPPT"; #--:cmd  debug
 
 echo;echo starting testing - with buffer of "$buff";
 #----------------------------------------
-cmd="$cmd0 -h"; $cmd; echo;echo '-----------------------------------------------------';echo;echo; #-
+cmd="$cmd0 -v"; 
+echo "##---cmd: $cmd ---"; $cmd; echo;echo '-----------------------------------------------------';echo;echo; #-
 
-cmd="$cmd0 poll"; $cmd; echo;echo;echo; #-
+cmd="$cmd0 -h"; 
+echo "##---cmd: $cmd ---"; $cmd; echo;echo '-----------------------------------------------------';echo;echo; #-
+
+cmd="$cmd0 poll"; 
+echo "##---cmd: $cmd ---"; $cmd; echo;echo;echo; #-
 
 cmd="$cmd0"; 
-echo "cmd: $cmd"; $cmd; echo;echo;echo; #-
+echo "##---cmd: $cmd ---"; $cmd; echo;echo;echo; #-
 
 cmd="$cmd0 debug"; 
 echo "##---cmd: $cmd ---"; $cmd; echo;echo '-----------------------------------------------------';echo;echo; #-
