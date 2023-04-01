@@ -777,7 +777,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	setting_s = (! update)?(strcmp(action,"logs")==0?"Logs":"Settings"):(update==2?"*Reverting Defaults*":"*Updating*");
 	if (display && strcmp(action,"current_settings")!=0) { //--(skip for backups)
 		printf("################################################################\n"
-			"## Modbus C MCProStarMPPT - %s - [%s] \n"
+			"## Modbus MCProStarMPPT - %s - [%s] \n"
 			"################################################################\n", setting_s, ctime_s);
 		/* #-------------------------CHARGER STATUS ID DATA----------------------------# */
 		//--read ------------------CHARGER STATUS:----------------:
@@ -918,7 +918,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		else { y++; bulk[y].start = eprom[ii].hexa; bulk[y].i = 1; x=1; }  
 	} 
 	
-	if (display && debug && strcmp(action,"current_settings")!=0) { 
+	if (!sil && debug && strcmp(action,"current_settings")!=0) { 
 		printf("\n--------------------------------------------------------------------" 
 			"\nSTARTING Bulk EEPROM Read: \t[ %zu ]\n", nume); }
 	//--Loop bulk registers array:

@@ -79,8 +79,9 @@ cat ../profiles/new.txt
 
 cmd="$cmd0 profile create"; #testing
 echo "##---cmd: $cmd ---"; $cmd; echo;echo '-----------------------------------------------------';echo;echo; #-
-#mv ../profiles/new.txt ../profiles/testNow.txt
-#...uncomment & change some test value...
+#mv ../profiles/new_profile.txt ../profiles/testNow_profile.txt
+##--uncomment & change some test value...
+perl -i -pe 'if (14..14) {s/^\#//i;}' ../profiles/new_profile.txt
 cmd="$cmd0 profile validate new"; #testing
 echo "##---cmd: $cmd ---"; $cmd; echo;echo '-----------------------------------------------------';echo;echo; #-
 ##--update:... after updates skip RAM? print just_EEPROM & display?
