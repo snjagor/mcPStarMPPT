@@ -24,7 +24,7 @@
  * +------cmd arg: -d toggle display ,  late night normalization as option?? not for -s[ilent]
  *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
  			RAM 0x0001: voltage multiplier - voltages stored as 12v & multiplied! PStar==1,2, TStar==1,2,4 (12,24,48)
-			 HVD checking in parseProfileValue(), 
+			 HVD checking and set value to 0 in parseProfileValue()!, 
  
 Notes:
 	* voltages in profiles & structs are set for 12v. 24v & higher systems are auto-multiplied by charger!
@@ -627,16 +627,16 @@ int main(int argc, char *argv[]) {
 	
 	/* Open the MODBUS connection to the MPPT */
     if (modbus_connect(ctx) == -1) {
-        if (!sil) { if (mrk==5){fprintf(stderr,">>....Modbus OFFLINE....<<\n");} // && debug
+        if (!sil) { if (mrk==5){fprintf(stderr,"------------[....Modbus OFFLINE....]\n");} // && debug
 			else fprintf(stderr, "Connection failed: %s\n", modbus_strerror(errno)); }
 		else { fprintf(stdout, "-1\n");  }
         modbus_free(ctx);
         if (mrk!=5) return -1;  //-:no connection.
 		//--offline actions: mrk=5==offline profile creation.     else 
-		else if (strcmp(action,"validate")!=0) action="backupprofile"; //-:new profile using builtin defs. [uncomment for prod!]
-		else mrk=0;
-		//-:[offline dev debug path!]:
-		//else if (strcmp(action,"validate")!=0||strcmp(action,"debugc")!=0) action="backupprofile"; 
+		else if (strcmp(action,"validate")!=0) action="backupprofile"; //-:new profile using builtin defs. 
+		//-:[offline dev debug path!]: 
+		//else if (strcmp(action,"debugc")!=0) action="backupprofile";
+		else mrk=0; //-:validate profile
     }  
 	//-:connection is live so skip profileIn & use live values for new profile! 
 	else if (mrk==5) { mrk=0; }
@@ -2371,12 +2371,12 @@ const char* chkProfile(char doo, char* profileName) {
 			//--//--FIRST value [Profile] check -- EEPROM register PDU:----------------:
 				if (strncmp(token,"0xE",3)!=0 && strncmp(token,"57",2)!=0) { 
 						   fprintf(stderr,">ERROR with cvs file line %d! [ %s ] is not valid!\n", tmp,token); exit(1); }
-				//--Convert register address value:........ minus one for (documented) rl!
-				else if (strncmp(token,"57",2)==0) { result=1; eeprom = atoi(token); eeprom--;  }
+				//--Convert register address value:........ 	_minus one for (documented logical) rl_!
+				else if (strncmp(token,"57",2)==0) { result=1; eeprom = atoi(token); eeprom--; }
 				//--Convert hexadecimal string into number:-----------------------:
 				else { result=1; eeprom = strtol(token,NULL,16); } //--convert hexadecimal!!!!!!!!!!!!!!
 				//--check register key again:
-				if (eeprom > 57344 || eeprom < 57409) {        
+				if (eeprom > 57344 && eeprom < 57409) {        
 						if (debug>3 && result) printf("\n0x%04X==[%d]  ", eeprom,eeprom); 
 				} else { fprintf(stderr,">ERROR with cvs file! [ %s ] is not valid register value!\n", token); exit(1); }
 			//--//--FIRST token [Settings] check:--  :-------------------------------:
@@ -2386,21 +2386,21 @@ const char* chkProfile(char doo, char* profileName) {
 			//---after above key, only 2: first is new value, second (optional) description-notes.
 			//--do each individually: //while (token != NULL) {  
 			//--//--SECOND -----------------------------------------------:
-				token = strtok(NULL, ",\n"); 	//--Profile register data Value:
-				//--trim whitespace,etc... && ! isspace((unsigned int)token[0])
-				if (token) { trimP(token); result=strlen(token); }
-				else {result = 0; }  if (!result) { fprintf(stderr,">ERROR no value for register [0x%04X]\n",eeprom); 
-					continue; } //--skip if nothing, warn or error. 
+			token = strtok(NULL, ",\n"); 	//--Profile register data Value:
+			//--trim whitespace,etc... && ! isspace((unsigned int)token[0])
+			if (token) { trimP(token); result=strlen(token); }
+			else {result = 0; }  if (!result) { fprintf(stderr,">ERROR no value for register [0x%04X]\n",eeprom); 
+				continue; } //--skip if nothing, warn or error. 
 			//--Profile: Assign values:
 				profileIn[st].hexa = eeprom; 
 				strncpy(profileIn[st].sv, token, 16); //(...save value as string for now...)!!!!!
 					if (debug>3) printf("->[%s]\t", token); //
 			//--//--THIRD 		------------------------------------------:
-				token = strtok(NULL, ",\n"); 
-				//--trim whitespace,etc... && ! isspace((unsigned int)token[0])
-				if (token) { trimP(token); result=strlen(token); }
-				else {result = 0;}   
-				//--Profile: Add new register description/notes from profile:
+			token = strtok(NULL, ",\n"); 
+			//--trim whitespace,etc... && ! isspace((unsigned int)token[0])
+			if (token) { trimP(token); result=strlen(token); }
+			else {result = 0;}   
+			//--Profile: Add new register description/notes from profile:
 				//---User description string:-----------:
 				if (result) { strncpy(profileIn[st].string, escapeStr("str",token), (size_t)101); //!filtering!!
 					if (debug>3) printf("->[%s]", token); //--DEBUG!
@@ -2449,10 +2449,14 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 		if (eprom[ep].hexa == 0xE01A) {
 			if (profileIn[pi].value.fv < -1 || profileIn[pi].value.fv > 0) { 
 				skip=1; fprintf(stderr," ! 0x%04X = %s %s !WARNING! new compensation value [ %f ] is not supported!\n", 
-					profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,profileIn[pi].value.fv);
-		}	}
+					profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,profileIn[pi].value.fv);  }
+		/*/--Specials: fraction [+mcPT: load Ohm 0...1, +both: fixed vmp pct 0.0...0.99] [f16 15360==1]  */
+		} else if (profileIn[pi].hexa==0xE026 || profileIn[pi].hexa==0xE037) {
+			if (profileIn[pi].value.fv!=0 && (profileIn[pi].value.fv<0 || profileIn[pi].value.fv>0.99)) {  
+				skip=1;	fprintf(stderr," ! 0x%04X [ %s ] [%hu] !WARNING! new value is unsupported!\n", 
+								profileIn[pi].hexa,profileIn[pi].sv,profileIn[pi].basev);  }
 		//--Voltage safety check?--  [18700==10.09]    //ranges: 10...30 or 0 (multiply by battery multiplier?)
-		else if ( strcmp(eprom[ep].unit,"v")==0 && profileIn[pi].value.fv != 0	//-- && eprom[ep].hexa != 0xE01A
+		} else if ( strcmp(eprom[ep].unit,"v")==0 && profileIn[pi].value.fv != 0	//-- && eprom[ep].hexa != 0xE01A
 				&& ((minV && profileIn[pi].value.fv < minV) || (maxV && profileIn[pi].value.fv > maxV)) ) { 
 			if (eprom[ep].hexa == 0xE01B && (maxV && profileIn[pi].value.fv < (maxV+1))) { skip=0; }//-:HVD, ... ??
 			else { skip=1; 
@@ -2463,17 +2467,12 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 		} else if ( strcmp(eprom[ep].unit,"C") == 0 && (profileIn[pi].value.fv < -128 || profileIn[pi].value.fv > 127) ) { 
 			skip=1; fprintf(stderr," ! 0x%04X = %s %s !WARNING! new temperature [ %f ] is not supported!\n", 
 					profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,profileIn[pi].value.fv); 
-		//--Specials: fraction & Ohm 0...1 [15360==1]
-		} else if ((profileIn[pi].hexa==0xE026 || profileIn[pi].hexa==0xE037) && profileIn[pi].value.fv!=0 && profileIn[pi].basev >= 15360) {  
-			skip=1;	fprintf(stderr," ! 0x%04X [ %s ] [%hu] !WARNING! new value is unsupported!\n", 
-								profileIn[pi].hexa,profileIn[pi].sv,profileIn[pi].basev);	
-		//--Other floats: [15360==1] higher probably?... Ohms == 0xE026!
-		} else if (eprom[ep].hexa!=0xE026 && profileIn[pi].value.fv!=0 && profileIn[pi].basev < 15360) {
+		//--Other floats: [15360==1] higher probably?... 
+		} else if (profileIn[pi].value.fv!=0 && profileIn[pi].basev < 15360) {
 			skip=1;	fprintf(stderr," ! 0x%04X [ %s ] [%hu] !WARNING! new value is very low!\n", 
 								profileIn[pi].hexa,profileIn[pi].sv,profileIn[pi].basev);
-		
 		//--Set update value!:--------------------------------: f_new == uint16_t!!!
-		} else if (profileIn[pi].value.fv==0) { skip=1; }
+		} else if (profileIn[pi].value.fv==0) { skip=1; }  //!why skip?!!!!!!!!!!!!!!!!!!!!!!! set to 0 !????????????
 		//--
 		if (!skip) { eprom[ep].f_new = profileIn[pi].basev;   }
 	} 
