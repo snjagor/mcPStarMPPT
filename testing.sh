@@ -5,7 +5,7 @@ togB="";
 while [ -n "$1" ]; do
 	if [ "$1" = "-b" ]; then 
 		togB=""; #"-b"; Off !  (unused opt)
-	elif (( ($1 > 0) && ($1 < 255) )); then
+	elif (( ($1 > 0) && ($1 < 256) )); then
 		buff="$1";
 	fi
 	shift; 
@@ -75,16 +75,16 @@ echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 ##--profiles: backup, create, validate, ...test
 cmd="$cmd0 profile backup"; 
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
-cat ../profiles/new.txt
+#cat ./profiles/....._profile.txt
 
 cmd="$cmd0 debug raw profile create"; 
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
-cat ../profiles/new.txt
+#cat ./profiles/new_profile.txt
 
 cmd="$cmd0 profile create"; #testing
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 #--uncomment & change some test value...
-perl -i -pe 'if (14..14) {s/^\#//i;}' ../profiles/new_profile.txt
+perl -i -pe 'if (14..14) {s/^\#//i;}' ./profiles/new_profile.txt
 cmd="$cmd0 profile validate new"; #testing
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 ##--update:... 

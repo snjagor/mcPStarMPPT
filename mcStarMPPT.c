@@ -23,8 +23,8 @@
  *  ++ Profiles: custom descriptions vs. translation, +filter user string descriptions in chkProfile(), 
  * +------cmd arg: -d toggle display ,  late night normalization as option?? not for -s[ilent]
  *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
+			 HVD checking and set value to 0 in parseProfileValue()!, escapeStr("file",), 
  			RAM 0x0001: voltage multiplier - voltages stored as 12v & multiplied! PStar==1,2, TStar==1,2,4 (12,24,48)
-			 HVD checking and set value to 0 in parseProfileValue()!, 
  
 Notes:
 	* voltages in profiles & structs are set for 12v. 24v & higher systems are auto-multiplied by charger!
@@ -512,13 +512,16 @@ int main(int argc, char *argv[]) {
 				printf(">F16 of [%f]: %hu \n\n",vf,v16); }
 			return 0; } 
 		//
-		else if (strcmp(argv[i], "-v")==0) { printf("\n%s \n--- ProStarMPPT* Opensource Charge Control Software ---\n"
+		else if (strcmp(argv[i], "-v")==0) { printf("%s \n\n--- ProStarMPPT* Opensource Charge Control Software ---\n"
 			"-----------------------------------------------------------\n"
 			" release version %.2f\n-----------------------------------------------------------\n"
-			"____*_*_* OpenSource Artistic-2.0 license © 2023 by sunja - centerflowing.com *_*_*____\n"
-			//"(may also be copied under terms of GNU General Public License)\n"
-			"*ProStarMPPT® is registered trademark to Morningstar Corp.\n\n",
+			"*ProStarMPPT® is registered trademark to Morningstar Corp.\n"
+			"*( www.morningstarcorp.com )\n\n"
+			"____*_*_* OpenSource Artistic-2.0 license © 2023 by sunja - centerflowing.com *_*_*____\n\n",
+			//"(may also be copied under terms of GNU General Public License)\n\n"
 			argv[0], VERSION); return 0; }
+		//--Error:
+		else { printf(">Error with args\n\n"); exit(1); }
 		//--next arg:
 		i++; if (i > 4) break;
 	 }
@@ -533,7 +536,7 @@ int main(int argc, char *argv[]) {
 	///////////////////////////////////////////////
 	//--Default Max/Min: (...divide by vmultiplier if accepting>12v inputs.)
 	maxV=maxV>18?18.0:(maxV<12?18:maxV); 		//--max acceptable v. safety check
-	minV=minV>13?11.5:(minV<10.1?11.5:minV); 	//--min acceptable v. safety check
+	minV=minV>13?11.5:(minV<1?11.5:minV); 		//--min acceptable v. safety check (lithium can be low?)
 	
 	/*/--Date / Time:---------------------------------------------------------------------------------:*/
 	//----Add time to date:
@@ -739,7 +742,8 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			//else .fv == eprom[].f_def (update) //--using builtin defaults
 			
 			/*/--Parse Profile FUNCTION:------------------------------------------------------ */
-			if (parseProfileValue("up", i,e,eprom) < 0) continue;  //just send eprom[ii]
+			signed char ym = parseProfileValue("up", i,e,eprom); //use above e...
+			if (ym < 0) continue;  //just send eprom[ii]
 			//--Add to global updates[]:--------------------------------------------------------: 
 			else { updates[upi] = profileIn[i].hexa;   upi++; 
 				/*/--Custom user description? (do separately from update?):-----------------: */
@@ -829,7 +833,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		if (tmStruct->tm_hour > 4 && tmStruct->tm_hour < 23){ 
 				latest = writeLogCache(1); }
 		else {  latest = writeLogCache(0); } //create if (!logcachefile)
-		if (latest && latest < (now-48)) { latest = writeLogCache(1); } //--:update anyway
+		if (latest && latest <= (now-48)) { latest = writeLogCache(1); } //--:update anyway
 	} //* */
 	
 		
@@ -916,7 +920,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			// * /--Combines Hi-LO:
 			if (strncmp(ram[e].calc,"comb",4)==0) { ram[e].value.lv = combine(ram[e].hexa, datas[z], num,ram); //*dp
 				if (ram[e].value.lv == -1){ ram[e].value.lv = 0; }  
-				}  //65505???? -*dp
+				}  //65506???? -*dp
 			//--Parse data values into register struct:
 			ram[e] = parseValue(&ram[e], datas[z]); 
 			//--Print out:
@@ -1198,11 +1202,11 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		if (!sil) { 
 			snprintf(sbuf, sizeof sbuf, "(%ld hours)", lbuf); //-:use sbuf to print lbuf_input
 			snprintf(bufs, sizeof bufs, "Now: %ld , unix: %ld , ", now,c_time); //lbuf_input !!!
-			printf("\n\n>Daily Logs:----------------------------------------------------:\n"
+			printf("\n>Daily Logs:----------------------------------------------------:\n"
 				"--Reminder: Log dates are based on continual use from today--\n%s:date buffering: [%s] %s\n%s retrieving %d logs\n", 
 				(debug?bufs:""), (lbuf_input?"on":(logCache[0].xt?"cache":"off")),
 				(lbuf_input?sbuf:""), strbuf, tnum); 
-			if (debug>2) printf("\n[%d]>Reading Log: 0x%04X, searching for %ld\n\n",debug,start,search);
+			if (debug>2) printf("[%d]>Reading Log: 0x%04X, searching for %ld\n\n",debug,start,search);
 			memset(&strbuf[0], '\0', sizeof(strbuf));	  //--not needed if using snprintf next...
 			if (json || cvs) sil=1;  //-:silence all further generic prints..
 		}	
@@ -1372,7 +1376,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				printf("\n###############################################################################\n");
 			} 
 		} //--close json logs array and file:
-		if (json) { writeFile ("logs", c_time, "]}\n"); printf(">Logs written to json..\n\n"); return 0; }
+		if (json) { writeFile ("logs", c_time, "]}\n"); if (!sil){printf(">Logs written to json..\n\n");} return 0; }
 		//-:close
 		printf("\n----------------------------------------------------------------\n\n\n\n");
 		return 0;
@@ -1416,8 +1420,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				//--lbuf needed for dating other logs: ??used???
 				lbuf = ((c_time - logCache[cindex].udate)/3600)-(now-logCache[cindex].hrmtr);  
 				if (lbuf<0){ lbuf=0; } //timeSkipB=0; //zero
-				if (debug) { printf(">>Found exact match!\n"); 
-					printf(">>lbuf: %ld , timeSkipB: %ld\n\n",lbuf,timeSkipB);  }
+				if (debug) { printf(">>Found exact match (lbuf: %ld , timeSkipB: %ld)\n\n",lbuf,timeSkipB);  } //>1???????
 			}
 			
 			//*/--Search found possibly close matches:--------------------------------: // */
@@ -1896,9 +1899,10 @@ static const long writeLogCache(char dool) {
 	 	//printf(">error? %s\n",fpbuf); 
 		latestHr = now;
 	} else if (st == -1) {  fprintf(stderr,">ERROR with log cache file! [%s]\n\n",file_logCache);  }
-	else if (!dool) { latestHr = readLogCache("lastLog"); e=2;  //fclose (fpp); -:Init file or return..
-		if (display && latestHr > (now-24)) { printf("Log Cache: current.\n\n");  }
-		else if (display) { printf("Log Cache: on.\n\n");  }
+	else if (!dool) { //-:Init file above or return latest:
+		latestHr = readLogCache("lastLog"); e=2;  //fclose (fpp); -:Init file or return..
+		if (display && latestHr > (now-48)) { printf("Log Cache: current.\n\n");  }
+		//-logcache exists and is current. //-:with time preference
 	} 
 	else { //fclose(fpp); --read latest cache date, only write if gt 24 hours ago...
 		latestHr = readLogCache("lastLog"); //
@@ -2291,25 +2295,25 @@ static void jsonOut(char action[], int cr, RamObj *ram0, int ce, RamObj *eprom0)
 static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[]) {
 	//--Output: 0,1,2==save values, >3=>stdout, raw? float16:float;
 	//---doo==null if debug && !new : prints to stdout.
-	FILE *fp; char file[128]=""; char bu[64]; char buf[255]; short f=0;
+	FILE *fp; char file[128]=""; char bu[64]; char buf[255]; short foo=0;
 	//--Date: passing ctime_s instead of recreating here...
 	
 	//--Open Output:-------------------------------------------:
 	if (doo[0] && debug<3) { 
 		//--File name: doo=="new" OR  profileBackups_ts ----: "current_settings" is global 
-		if (strcmp(doo,"new")==0) {  f=1; strncpy(bu,doo,(size_t)64); } //profile=="new" 
+		if (strcmp(doo,"new")==0) {  foo=1; strncpy(bu,doo,(size_t)64); } //profile=="new" 
 		else { 	snprintf(bu, (size_t)64, "%s_%ld", doo, c_time); } 		//profile==profileBackups_ts_
 		snprintf(file, sizeof(file), "%s", appendStr(4, profileDir, bu, profileTag, ".txt")); //fileOut, ??
 		//--Open file for writing: ...use: writeFile("doo", date, text); !!!!!!!!!!!!!?
 		fp = fopen (file, "wb");    //ab
 		if (!fp) { fprintf(stderr,">Error creating requested profile! [%s]\n",file); exit(1); }
 		setvbuf(fp, buf, _IOFBF, sizeof buf); // BUFSIZ
-	} else { fp = stdout; f=3; } //--:stdout  
+	} else { fp = stdout; foo=3; } //--:stdout  
 
 	fprintf(fp,"Register,new value,description,\n"
 		"#--first line MUST be exactly as above! (last comma opt.)\n"
 		"//Ms ProStar MPPT Charger Settings:------------:\n");
-	if (f==1) fprintf(fp,"#-Logical Addr must be as docs specify.\n"
+	if (foo==1) fprintf(fp,"#-Logical Addr must be as docs specify.\n"
 		"#---trailing zeros on voltages are optional.\n"
 		"#----descriptions are optional and [willbe appended?] ...\n"
 		"//line comments can start with either // or #\n"
@@ -2333,7 +2337,7 @@ static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[])
 		fprintf(fp,"#0x%04X, %s \t[%s] %s\n", (int) eprom0[ii].hexa, str, eprom0[ii].unit, eprom0[ii].string); 
 	}
 	fflush(fp); setvbuf(fp, NULL, _IOFBF, 0);
-	if (f<3){ fclose(fp); printf(">Created settings backup profile [ %s ].\n", file); 
+	if (foo<3){ fclose(fp); printf(">Created settings %s profile [ %s ].\n", (foo==1?"":"backup"),file); 
 	} else { printf("\n"); }
 	return 0;
 }
@@ -2342,7 +2346,7 @@ const char* chkProfile(char doo, char* profileName) {
 	//--Parse txt || cvs profile in:  		!escapeStr() before function!!!!
 	const char *prof;
 	if (doo=='p') { //if (strcmp(doo,"p")==0) { 
-		prof = appendStr(4, profileDir,escapeStr("file",profileName),profileTag,".txt"); }
+		prof = appendStr(4, profileDir,escapeStr("file",profileName),profileTag,".txt"); }  //!!!!!!!!!!!filtering!
 	//else if (strcmp(doo,"s")==0) { prof = profileName;  } //-:settings file parsing
 	//static char prof[125] = ""; prof[0] = '\0'; ///---appendStr is const char*
 	//strncpy(prof, appendStr(3, profileName, profileTag,".txt"), sizeof(prof));  //--:either works:
@@ -2416,7 +2420,7 @@ const char* chkProfile(char doo, char* profileName) {
 
 static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 	//--Globals: profileIn[pi]; 	Not Global (yet): eprom[ep]; 
-	//---if (update) eprom[ep].f_new (uint16_t) == profileIn[pi].value.fv (default) || eprom[ep].f_def (if builtins)
+	//---if (update) eprom[ep].f_new (uint16_t) == profileIn[pi].value.fv (default) || eprom[ep].f_def (if builtins?)
 	//---else printing profile: eprom[ep].basev == EEPROM .basev || eprom[ep].f_def
 	char skip = 0; char non = -1;
 	
@@ -2436,14 +2440,13 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 		else  { //---float:--: needs converting:  
 			profileIn[pi].basev = fl_to_half(profileIn[pi].value.fv); }
 		
-		/* !!!!!!!!!!!!!!!!!!!! Voltage Multiplier !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
+		/* !!!!!!!!!!!!!!!!!!!! Voltage Multiplier !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! unneeded. 
 		if (strcmp(eprom[ep].unit,"v")==0 && profileIn[pi].value.fv!=0 && vmultiplier>1) { //-: []
 			//--if accepting 24v+ values & vmultiplier: down shift here...	
 			profileIn[pi].value.fv = profileIn[pi].value.fv/vmultiplier;
 			profileIn[pi].basev = fl_to_half(profileIn[pi].value.fv);
 		} //  */
 		
-			///* -- FIX NULL F16s!!! --    // * /
 		/* /-/--Last F16 Checks, Assign .f_new:-----------------------------:  error on NaN  */
 		//-:temp comp - check if in range...???
 		if (eprom[ep].hexa == 0xE01A) {
@@ -2456,9 +2459,9 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 				skip=1;	fprintf(stderr," ! 0x%04X [ %s ] [%hu] !WARNING! new value is unsupported!\n", 
 								profileIn[pi].hexa,profileIn[pi].sv,profileIn[pi].basev);  }
 		//--Voltage safety check?--  [18700==10.09]    //ranges: 10...30 or 0 (multiply by battery multiplier?)
-		} else if ( strcmp(eprom[ep].unit,"v")==0 && profileIn[pi].value.fv != 0	//-- && eprom[ep].hexa != 0xE01A
+		} else if ( strcmp(eprom[ep].unit,"v")==0 //&& profileIn[pi].value.fv != 0	//--:min & max check   != 0xE01A
 				&& ((minV && profileIn[pi].value.fv < minV) || (maxV && profileIn[pi].value.fv > maxV)) ) { 
-			if (eprom[ep].hexa == 0xE01B && (maxV && profileIn[pi].value.fv < (maxV+1))) { skip=0; }//-:HVD, ... ??
+			if (eprom[ep].hexa == 0xE01B && (maxV && profileIn[pi].value.fv < (maxV+1))) { skip=0; }//-:HVD, ... ???????!
 			else { skip=1; 
 				fprintf(stderr," ! 0x%04X [ %s ] !WARNING! new voltage is very low or very high %f! == %hu\n"
 									"!\t voltages must be between %.2f and %.2f !\n",
@@ -2472,9 +2475,10 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 			skip=1;	fprintf(stderr," ! 0x%04X [ %s ] [%hu] !WARNING! new value is very low!\n", 
 								profileIn[pi].hexa,profileIn[pi].sv,profileIn[pi].basev);
 		//--Set update value!:--------------------------------: f_new == uint16_t!!!
-		} else if (profileIn[pi].value.fv==0) { skip=1; }  //!why skip?!!!!!!!!!!!!!!!!!!!!!!! set to 0 !????????????
+		} else if (profileIn[pi].value.fv==0) { skip=1; }  //!-:set above.
 		//--
 		if (!skip) { eprom[ep].f_new = profileIn[pi].basev;   }
+		//* -- NULL F16s? ..some are allowed..   // *
 	} 
 	
 	//--Float input error: stray floats?? ---------------------------------------:
@@ -2490,7 +2494,7 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 			//profileIn[pi].basev = (uint16_t) profileIn[pi].value.fv;  } //(uint16_t): max==65535
 		
 		/* /-/----Last nonF16 Filter/s: .f_new holds update value here on.. ------------------- / */ 
-		//--Check for null uint16_t: ????? more nulls??  --F16 can have but not these (probably)--
+		//--Check for null uint16_t: --.calc F16 can have but not these (probably)--
 		if (eprom[ep].f_new == 65506) { skip=1;
 			fprintf(stderr," ! 0x%04X = %s %s !WARNING! new value [ %hu ] null is not supported!\n", 
 					profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit, eprom[ep].f_new); 
@@ -2498,9 +2502,8 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 		} else if ( strcmp(eprom[ep].unit,"days")==0 && (eprom[ep].f_new > 255) ) { //profileIn[pi].value.fv  < 0 || 
 			skip=1; fprintf(stderr," ! 0x%04X = %s %s !WARNINGS! new time [ %d ] is not supported!\n", 
 						profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,(int)profileIn[pi].value.fv); //%hu
-		/* /--time: both checks on profileIn[pi].value.fv done already!
-		} else if ( (strcmp(eprom[ep].unit,"secs")==0 || strcmp(eprom[ep].unit,"mins")==0) && (profileIn[pi].value.fv  < 0 || eprom[ep].f_new > 65535) ) { skip=1; fprintf(stderr,"> 0x%04X = %s %s !WARNINGS! new time [ %d ] is not supported!\n", 
-									profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,(int)profileIn[pi].value.fv); //%hu  */
+		/* /--time: both checks on profileIn[pi].value.fv done already! (.f_new > 65535 || .fv < 0) skip:
+		} else if ((strcmp(eprom[ep].unit,"secs")==0 || strcmp(eprom[ep].unit,"mins")==0) && ) { skip=1; } */
 		//--Misc Settings:
 		} else if ( eprom[ep].hexa==0xE034 && (profileIn[pi].value.fv  < 1 || eprom[ep].f_new > 247) ) {  //modbus id
 			skip=1; fprintf(stderr," ! 0x%04X = %s %s !WARNINGS! new id [ %d ] is not supported!\n", 
@@ -2509,9 +2512,11 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 			skip=1; fprintf(stderr," ! 0x%04X = %s %s !WARNINGS! new id [ %d ] is not supported!\n", 
 						profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,(int)profileIn[pi].value.fv); //%hu
 		}
+		//--zero out...
+		if (skip) eprom[ep].f_new = 0;
 	}
 	fflush(stderr);
-	//
+	//--one more check for null F16: if (eprom[ep].f_new == 65506 && eprom[ep].hexa!=)?...
 	if (skip) return non;
 	else { return 1; }  //eprom[ep].updating = 1; //-:mark in struct
 } 
@@ -2649,7 +2654,7 @@ static char* escapeStr(const char* doo, char* string) {
 		nStr = strReplace("\\","",string);
 		nStr = strReplace(":","",nStr);
 		//if (strncmp(nStr,"/",1)==0) strReplace("/","",nStr);
-		nStr = strReplace("..","",nStr);  //replace w/regex
+		nStr = strReplace(".","",nStr);  //replace w/regex
 		nStr = strReplace("/","",nStr); //replace w/regex
 	}
 	//--escape specifics: //--regex escape: ["\\] and other js specifics..!
