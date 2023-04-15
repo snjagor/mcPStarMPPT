@@ -53,7 +53,7 @@ cmd="$cmd0 logs 2 days 1";
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 #---custom buffer:
 cmd="$cmd0 logs 2 days 1 -b 24"; 
-echo "##---cmd: $cmd ######################---:dates should be 24hrs off above..."; 
+echo "##---cmd: $cmd ###################"; echo "###---:dates should be 24hrs off above..."; 
 $cmd; echo;echo;echo;echo; #-
 
 cmd="$cmd0 debug logs 3 days 2"; 
