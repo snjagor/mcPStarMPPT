@@ -1,7 +1,7 @@
-mcStarMPPT 
+mcPStarMPPT 
 ===========
 
-### an opensource app for controlling ProStarMPPT solar charge controllers
+### an opensource app for controlling ProStarMPPT* solar charge controllers
 
 ## Requirements
 
@@ -11,7 +11,7 @@ mcStarMPPT
 developer tools. On Linux OSes `cc` should already be installed.
 
 * This program only works for [Morningstar ProStarMPPT](https://www.morningstarcorp.com/) 
-solar charge controllers. For Morningstar TriStarMPPT charge controllers, see related 
+solar charge controllers. For Morningstar TriStarMPPT* charge controllers, see related 
 distribution <...> .
 
 * You will need an appropriate device for connecting to the modbus terminal on the 
@@ -73,7 +73,7 @@ With no arguments the program will output current stats and settings for the con
 
 - `poll` : shorter stats display
 - `eeprom` : just output the configurable charger settings
-- `json` : for most cmds will output data into a json file
+- `json` : output data into a json file for external use
 
 - `logs` : output logs from either days-ago, hourmeter, or memory address
 
@@ -147,10 +147,12 @@ mcPStarMPPT update 		- (if default profile is enabled.)
 Released under the Artistic-2.0 license. Please read the LICENSE file for details.
 Most use cases are allowed..
 
+ProStarMPPT & TriStarMPPT are registered trademarks of Morningstar Corp.
+Please see their [website](https://www.morningstarcorp.com/) for more info on their solar chargers.
 
 ## Contributing
 
-See git repo https://github.com/snjagor/mcStarMPPT bug forum.. or clone and contribute.
+See git repo https://github.com/snjagor/mcPStarMPPT bug forum.. or clone and contribute.
 If this program has been helpful please consider donating to the author at: [official website][]
 
 
@@ -162,5 +164,5 @@ Planned features for working on include:
 - [ ] external settings configuration
 - [ ] optional [-s] silent mode for library-like returns
 
-[source code]: https://github.com/snjagor/mcStarMPPT
+[source code]: https://github.com/snjagor/mcPStarMPPT
 [official website]: https://www.centerflowing.com/#programs

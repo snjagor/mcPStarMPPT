@@ -5,7 +5,7 @@ togB="";
 while [ -n "$1" ]; do
 	if [ "$1" = "-b" ]; then 
 		togB=""; #"-b"; Off !  (unused opt)
-	elif (( ($1 > 0) && ($1 < 256) )); then
+	elif (( ($1 > 0) && ($1 < 257) )); then
 		buff="$1";
 	fi
 	shift; 
