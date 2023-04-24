@@ -20,10 +20,11 @@
 	//----total char strln > 256: ... printOut(), jsonOut():jsontxt[655] is biggest.
  *
  *   	+cvs output not working!, !externalize configuration!, +wide char support, 
- *  ++ Profiles: custom descriptions vs. translation, +user string descriptions [debug for now] filter in chkProfile(), 
+ *  ++ Profiles: custom descriptions vs. translation, +only in profiles [debug for now] filter in chkProfile(), 
  * +------cmd arg: -d toggle display ,  late night normalization as option?? not for -s[ilent]
  *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
-			 HVD checking and set value to 0 in parseProfileValue()!, escapeStr("file",), 
+			 HVD checking and set value to 0 in parseProfileValue(), escapeStr("file",), 
+	+redo/simplify: logcache parsing in logs loop.. use goto block for all??
  
  	RAM 0x0001: voltage multiplier - voltages stored as 12v & multiplied! PStar==1,2, TStar==1,2,4 (12,24,48)
 Notes:
@@ -46,14 +47,14 @@ Notes:
 #include <unistd.h>		//usedfor:
 #define CUPDATEABLE 14 	/*  */
 #define UPDATEABLE 37 	/*  */
-#define MSMPPT    0x01	/* Default modbus address of the MPPT */ //---:[0xE034] */
-#define VERSION   1.00
+#define MSMPPT    0x01	/* Fallback modbus address of the MPPT */ //---:[0xE034] */
+#define VERSION   1.01
 int MAX_CACHE_SIZE = 200000;		//-:max file size (bytes) before rebuilding
 
 /* //---------------------CONFIGURATION---------------------------------------//: */
 //static char externalize_config=0; //--:read configuration from file, use below as fallbacks? 
 //--------------------------------------:   will create file on startup if none exists.
-unsigned char modbusId=0;  //:Default modbus address of the MPPT: 0==default
+unsigned char modbusId=0;  //:Default modbus address [0xE034] of the MPPT: 0==MSMPPT
 char display=1; 
 static char date_format[64] = "%a %b %d %Y"; //--format for dates (w/o time)
 char json=0; char cvs=0; //---create json [or cvs] files
@@ -76,7 +77,7 @@ static const char update_all_defaults=0; //-:enable builtin 'update all' cmd.. (
 static char batteryVoltagesNote[255] = "Generic Battery Voltages:\n 100%:[12.7] volts, 90%:[12.6], 80%:[12.5], 70%:[12.3], 60%:[12.2], 50%:[12.1], 40%:[12.0], 30%:[11.9], 20%:[11.8], 10%:[11.7]";
 /*  Max / Min Voltages - All input voltages 12v in eeprom!  */
 static float maxV = 0; 	//:profile input safety check.. [default fallback=18] (EQ||HVD==highest)
-static float minV = 0;  //:profile input safety check.. [>10.3 - default fallback=11.5]
+static float minV = 0;  //:profile input safety check.. [(>10.3 volts) , default fallback=11.5]
 /* Debug */ 
 //--0=print Display, 1=print RAM/EEPROM & display, 2=verbose debug, >=3=no writes, >3=+logCache & profiles debug...
 char debug = 0; 
@@ -351,10 +352,10 @@ int main(int argc, char *argv[]) {
 	//----------------------------------------------------------------------------------- */
 	{	 short i = 1; //--argv[0] is program name.
   	 while (i < argc) { //printf("\t%d>arg[ %s ]\n", i, argv[i]);
-	    if (strcmp(argv[i], "-h")==0) { printf("\n__________OpenSource ProStar* MPPT Charge Controller Software_____________\n" 
+	    if (strcmp(argv[i], "-h")==0) { printf("\n__________ProStarMPPT* OpenSource Charge Control Software_____________\n" 
 			"\n %s (no options = default display output)\n\n"
 			" %s [output|control options] [update|logs options]\n\n"
-			"Output Options:\n\t poll, json, json+ (display info), debug, debug+ (verbose debug), eeprom, -d,\n"
+			"Output Options:\n\t poll, json, json+ (display info), debug, debug+ (verbose debug), eeprom,\n"
 				"\t -d (toggle info display), -s (silent)\n"
 				"\t debugn (to stdout), raw (output raw float16 values)\n\n"  //, 
 			"Control Options:\n\t reboot,   EQ [ON | OFF],\n"
@@ -466,10 +467,8 @@ int main(int argc, char *argv[]) {
 		else if (strcmp(argv[i], "eeprom")==0) { just_EEPROM = 1; display=0; } 
 		//--numeric exit errors:
 		else if (strcmp(argv[i], "-s")==0) {  sil = 1;  }
-		//--display
-		else if (strcmp(argv[i], "-d")==0) { display=display?0:1; } //--needs to be a diff char: Header vs. info display!!!
-		//--toggle display:
-		//else if (strcmp(argv[i], "-d")==0) {  display = display?0:1;  }
+		//--toggle display: 			 Header vs. info display
+		else if (strcmp(argv[i], "-d")==0) { display=display?0:1; } //--needs to be unique char!!!
 		//--Logs:
 		else if (strcmp(argv[i], "logs")==0) {  action = "logs"; i++; if (!argv[i]) return -1;
 			//if (strcmp(argv[i],"cache")==0) { action = "debugc"; i++; mrk=5; break; } //mrk debug!!!!
@@ -523,7 +522,7 @@ int main(int argc, char *argv[]) {
 			"*ProStarMPPT® is registered trademark to Morningstar Corp.\n"
 			"*( www.morningstarcorp.com )\n\n"
 			"____*_*_* OpenSource Artistic-2.0 license © 2023 by sunja - centerflowing.com *_*_*____\n\n",
-			//"(may also be copied under terms of GNU General Public License)\n\n"
+			//"(may also be copied under terms of GNU General Public License GNUv.2+ or later)\n\n"
 			argv[0], VERSION); return 0; }
 		//--Error:
 		else { printf(">Error with args\n\n"); exit(1); }
@@ -1076,9 +1075,9 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	
 	fprintf(fp,"\n__Settings & Info_________________________________________________________________\n[%s]\n", ctime_s);
 	fprintf(fp,"%s\n\n", batteryVoltagesNote); //filtering??
-	fprintf(fp,"DipS:	%s\n__Alarms / Faults:__\n0x0022:  %s\n", 
+	fprintf(fp,"DipS:	%s\n__Alarms / Faults:__\n(0x0022): %s\n", 
 				ram[getIndex(0x003A,num,ram)].value.sv, ram[getIndex(0x0022,num,ram)].value.sv);
-	fprintf(fp,"Alarms:  %s\n	\nAlarms (day):	%s\n", ram[getIndex(0x0039,num,ram)].value.sv, ram[getIndex(0x0048,num,ram)].value.sv);
+	fprintf(fp,"%s\n(day): %s\n", ram[getIndex(0x0039,num,ram)].value.sv, ram[getIndex(0x0048,num,ram)].value.sv);
 	
 	/*/------Print OUT to stdout or file or both:-----------------------------------------:
 	 fflush(fp); 	//--file - append to debug file
@@ -1262,15 +1261,15 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				
 				
 				/* //----------  Modify Date buffer ---------------------------//  */
-				//--Use logCache: --------------------------:   ...logDate is 1hr past sunset.. 
+				//!--Use first logCache search: --------------------:   ...logDate is 1hr past sunset.. 
 				if (a==0 && cdMarker==-1) { logs[a].date = cacheDate;  } //-:search was exact match in cache
-				//--User input buffer: (hrs for correct date)
+				//!--User input buffer: (hrs for correct date)------:
 				else if (lbuf_input){ ee+=lbuf; if (debug>1) printf(">>>buffering %ld hours\n",lbuf); }   
 				
-				//-LogCache: skip first search-opt log, +skip if newer than cache: 1st cache search for..:
+				//!--LogCache: skip first search-opt log, +skip if newer than cache: 1st cache search for..:
 					//!Bug: first log match=latest cache [cindex=1], next log is... OR next log is oldest... !!!!!!
 				else if (logCache[0].xt && logDate <= logCache[1].hrmtr+36 && (a || logOpt!=2)) { //-:(skip 1st daysago search)
-					//--LogCache: modify dates here, modify search above... 
+					/*/--LogCache: modify dates here, modify search above... */
 					//-----logCache[0].xt == real number of cached dates! starting at 1
 					//--SearchCache: new || previous was after/before all cache dates, or was latest || log-wrap-around:...
 					if (!cindex || cindex==1 || (cindex>logCache[0].xt && !lbuf) || (a && logDate < logs[a-1].log[0].value.lv)) { 
@@ -1287,25 +1286,34 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 					//--After||Before all cache dates? nothing to do..  (before all: lbuf set)
 					//---:before: cindex>.xt & nextCD==0, after: cindex==0 & nextCD==0, 
 					else if (!cindex || cindex>logCache[0].xt || !nextCD || nextCD<0) { //check..lbuf?? 
-						if (debug>1) printf(">>>Nothing more doing, before or after logCache.\n");  //>1
+						if (debug) printf(">>>Nothing more doing, before or after logCache.\n");  //>1
 					} //--below uses nextCD to increment.. //?timeSkipB=0; 
 					
 					//--use next cache date if match:  !!!!----------time calculation --------------!!!!!!!
 					else if ((logDate+8) > logCache[nextCD].hrmtr && (logDate-22) < logCache[nextCD].hrmtr){
+						cindex=nextCD;  nextCD--;
 						//--recompute lbuf if needed: 
-						if (! lbuf) { lbuf = ((c_time - logCache[nextCD].udate)/3600)-(now-logCache[nextCD].hrmtr); 
-							if (lbuf<0){ lbuf=0; } }   if (debug>1) printf(">>>Next cache date is a match>>\n"); //>1
-						logs[a].date = logCache[nextCD].udate;   cindex=nextCD;  nextCD--;  timeSkipB=0;//zero
+						lbuf = ((c_time - logCache[cindex].udate)/3600)-(now-logCache[cindex].hrmtr); 
+						if (lbuf<0){ lbuf=0; }      timeSkipB=0;//zero
+						logs[a].date = logCache[cindex].udate;   
+						if (debug){ printf(">>>Next cache date is a match>>\n"); }
 					}
-					//--before next cache date increment: no change to lbuf..
-					else if (debug>1 && logDate < logCache[nextCD].hrmtr) { 
-						printf(">>>before next cache date %s>>\n", (!lbuf? "(no buffer)":""));  //>1
-					}
+					/*/--before next cache date increment: no change to lbuf?..
+					else if (debug && logDate < logCache[nextCD].hrmtr) { 
+						//if (timeSkipB==0) {  }  recalculate!! missing time bt prev & next..if prev was exact this needed!
+						//...best to send to cacheDParse block!
+						snprintf(sbuf,sizeof(sbuf),"(buffer of %ld hrs)",lbuf);
+						printf(">>>before next cache date>> %s\n", (!lbuf? "(no buffer)":sbuf));  //>1
+					} // */
 					
 					/* //----------- After Next Cache Date ------------------------ */
 					//--after next: re-search logCache & recompute lbuf, nextCD && ...   
-					else if (logDate > logCache[nextCD].hrmtr) { 
-						 if (debug>1) printf(">>>Log date after next cache date. Searching again..\n"); 
+					else if (logDate > logCache[nextCD].hrmtr || logDate < logCache[nextCD].hrmtr) { 
+						 if (debug) { 	if (logDate > logCache[nextCD].hrmtr) { 
+						 		printf(">>>Log date after next cache date. Searching again..\n"); }
+						 	else if (logDate < logCache[nextCD].hrmtr){ snprintf(sbuf,sizeof(sbuf),"(buffer of %ld hrs)",lbuf);
+								printf(">>>before next cache date. Searching...%s\n", (!lbuf? "(no buffer)":sbuf));}
+						 }
 						nextCD=0; cacheDate=0; searchLogCache(logDate, &cacheDate, &cindex); 
 						cdMarker=2; goto cacheDParse; //-:parse block  
 						cacheDParse2: ;
@@ -1364,7 +1372,11 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			}
 			
 			/*/--Print Out:---------------------------------------------------------------//:sorting? */
-			if (debug>2 || raw) {  printf("\n>Log [%d]-----------------------:\n",a);  //:debug  
+			if (debug>2 || raw) {  printf("\n>Log [%d]-----------------------:\n",a);  //:debug 
+				printf("%s %s\n",(cdMarker==1?"Cached Date:":"Approximate Date:"),logs[a].date_s); 
+				if (cindex && timeSkipB){ snprintf(sbuf,sizeof(sbuf),"(date is within [%ld] hrs)",timeSkipB); }//-:buffer
+				printf(" (%.0f days ago)\t %s\n", daysago, (cindex && timeSkipB)?sbuf:""); 
+				//--iterate: 
 				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); }  
 			} else {
 				// * //--Formated:--------------------------------------------: * /
@@ -1613,17 +1625,20 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 	if (debug>1) printf("\n>ReadLogs( %d )\n",tnum); //1st start most important! rest can be modified..
 	if (tnum>maxLogs) { leftovers = tnum%maxLogs;  //--:last bulk[].i      
 		 if (debug>2 && leftovers) printf(">...leftovers -- %d\n",leftovers); 
-		for (int uu=0; uu<tnum/maxLogs; uu++) { bulk[bi].start = start+((uu*maxLogs)*16);
+		bulk[0].start = start;
+		for (int uu=0; uu<tnum/maxLogs; uu++) { 
+			if (uu) { bulk[bi].start = bulk[bi-1].start+((1*maxLogs)*16); } //uu*
+			//--some logs read twice if readLogs start is reread after null-loop-around:
+			if (bulk[bi].start>0x8FFF) {bulk[bi].start=0x8000; lp=1;} 
 			if (lp && bulk[bi].start>=bulk[0].start) { if (debug>2){printf(">...last bulk[ %d ]...\n",bi);} 
 				bulk[bi].start=0; leftovers=0; break; }
 			bulk[bi].i=maxLogs;  
-			//--some logs read twice if readLogs start is reread after null-loop-around:
-			if (bulk[bi].start>0x8FFF) {bulk[bi].start=0x8000; lp=1;} 
+			
 			 if (debug>2) printf(">...bulk %d - %d - starting: 0x%04X\n",bi,bulk[bi].i,bulk[bi].start);  //-----debug
 			bi++; //-:increment 
 		} 
 		if (leftovers) { bulk[bi].i = leftovers;  bulk[bi].start=bulk[bi-1].start+(maxLogs*16);   
-			if (bulk[bi].start>0x8FFF) {bulk[bi].start=0x8000;}
+			if (bulk[bi].start>0x8FFF) {bulk[bi].start=0x8000;} //split????
 			 if (debug>2) printf(">...bulk %d (leftovers) - %d - starting:0x%04X\n",bi,leftovers,bulk[bi].start);  //-----debug
 			bi++; 
 		} //printf(">!.next bulk %d - bulk[%d] 0x%04X , bulk[%d]: 0x%04X\n",u,u-2,bulk[u-2].start,u-1,bulk[u-1].start);
@@ -1635,7 +1650,7 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 	//--One Bulk:-----------------------------------------------: 
 	else { 	bulk[0].start=start; bulk[0].i=tnum; remaining=1; } 
 	//--Done creating Bulk[]:
-	if (debug>2){ printf(">Total Log Reads  - %d\n",remaining); }  //exit(1);
+	if (debug && tnum>2){ printf(">Total Log Reads  - %d\n",remaining); }  //exit(1);
 	
 	
 	/* -----------------  Loop Bulk Reads -------------------------------------------------- 
@@ -1643,22 +1658,23 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 	short logx=0; 	//+'total' is redundant to logx
 	short bulkT=remaining; remaining=0; leftovers=1;//-:leftovers used to avoid looping cleared area twice
 	lp=0; //--:some logs read twice if readLogs start is reread after null-loop-around
+	uint bstart=bulk[0].start;
 	//--loop bulk[], filling in logs w/ datal:-----------------------------------------------: 
-	for (short b=0; b<bulkT; b++) { bi=0; if(debug>1)printf(">----Read [%d]\n",b); //-:sizeof(bulk)
-		if (!bulk[b].i) { continue; } //--empties 
+	for (short b=0; b<bulkT; b++) { bi=0; if(debug>1 && tnum>1)printf(">----Read [%d]\n",b); //-:sizeof(bulk)
+		if (!bulk[b].i) { continue; } //--empties  		||==65535
 		if (bulk[b].start > 0x8FFF) { bulk[b].start=0x8000; lp=1; } //end. goto beginning.
-		if (debug>2) printf(">.read..0x%04X:..%d.............\n",bulk[b].start,bulk[b].i);
-		if (lp && bulk[b].start>=bulk[0].start) { bulk[b].start=0; break; }
+		if (debug>1 && tnum>1) printf(">.read..0x%04X:......return %d.........%s\n",bulk[b].start,bulk[b].i,(lp?"lp":""));
+		if (lp && bulk[b].start>=bstart) { bulk[b].start=0; break; }
 		uint16_t datal [bulk[b].i*16]; 	short p=0;
 		
 		//--checking overflow:------------------------------------------------:
 		if (bulk[b].i>1) { remaining = (0x9000 - bulk[b].start)/16; 
 			//--split if end of logs.    //--
 			if (remaining < bulk[b].i) { readModbus(ctxx, bulk[b].start, remaining*16, datal);
-				if (debug>1) printf(">...bulk [%d] split - %d - 0x%04X\n",b,remaining,bulk[b].start);
+				if (debug>1 && tnum>1) printf(">...bulk [%d] split - %d - 0x%04X\n",b,remaining,bulk[b].start);
 				p = parseLogs(bulk[b].start,logx,logs, datal,remaining); 
 				bi+=p; total+=p; logx+=p; memset(&datal[0],'\0', sizeof(datal));
-				if (p<remaining && searching) { if (debug>1){printf("readLogs: ...last log...\n");} break; } //-:lastlog
+				if (p<remaining && searching) { if (debug>1){printf("readLogs: ..last log...\n");} break; } //-:lastlog
 				bulk[b].start=0x8000; bulk[b].i = bulk[b].i-remaining; lp=1;
 			}  remaining=0;
 		}	 //and split read of bulk[b]
@@ -1669,10 +1685,10 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 		p = parseLogs(bulk[b].start,logx,logs, datal,bulk[b].i); //start @ logx w/start, parse bulk[b].i logs..
 		
 		//--Search Return:----------------------------------------------------:
-		if (lp || (p<bulk[b].i && (searching || !leftovers))) { total+=p; 
+		if (p<bulk[b].i && (searching || !leftovers)) { total+=p; //-:!leftovers marks skipahead section
 				if (debug>1){printf("readLogs: ...last log...\n");} break; } //-:lastlog
 		//--SkipAhead... & fill rest of bulk[b] logs--------------------------:
-		else if (p<bulk[b].i){ bi+=p; total+=p; logx+=p; short px=logx; //-:start with logs[px]  
+		else if (p<bulk[b].i && leftovers){ bi+=p; total+=p; logx+=p; short px=logx; //-:start with logs[px]  
 			/*/--blank means logs hit cleared area:---------------- *///(size is b/t ~58 logs and ~2) 
 			leftovers=0; //-:-----Do NOT loop around to nulls again (if tnum is >logs)--------
 			if (debug){printf("readLogs %d: ...skipping forward...found %d\n",b,total);} 
@@ -1699,7 +1715,7 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 			} //-:exit while loop. 	
 			//--Start is at oldest log------------------------------:
 			if (remaining>(bulk[b].i-bi)) { remaining=(bulk[b].i-bi); lx=5; }
-			if (lp && start>=bulk[0].start) {break;}
+			if (lp && start>=bstart) {break;}
 			
 			readModbus(ctxx,start,remaining*16,datalm);
 			p=parseLogs(start,px,logs, datalm, remaining); 
@@ -1769,7 +1785,7 @@ static short parseLogs(uint start, short logx, LogObj *logs, uint16_t datal[], s
 	//printf("testing: %d: starting logs [%d] , total [%d]\n",tnum,logx,bnum);
 	 
 	for (short yi=0; yi<bnum; yi++){ //fill logs[] starting @ logx and datal[di] 
-			if (debug>1) printf(">Log: %d [%d]----------------------------------------------:\n",yi,logx);
+			if (debug>1 && bnum>1) printf(">Log: %d [%d]----------------------------------------------:\n",yi,logx);
 		//---Fill each logs[logx] with log[datal[*16]]:-----------------:
 		/* //--Loop and assign/parse values into structs, then into logs[]:---------------------:  */
 		//--Log struct: 
@@ -1804,7 +1820,7 @@ static short parseLogs(uint start, short logx, LogObj *logs, uint16_t datal[], s
 		//--Fill logs Metadata: -----------------------------------  logs[a].date,logs[a].date_s;
 		/* Hourmeter as date. ...real date after function: Dates Approximate */ 
 		logs[logx].date = (time_t) (log[1].value.lv)?log[1].value.lv:0; //--:hours ,time_t seconds*3600
-		if (debug>1) printf(">parseLOGs! 0x%04X hourmeter value: [ %ld ]:\n",log[0].hexa, logs[logx].log[1].value.lv);
+		if (debug>1 && bnum>1) printf(">parseLOGs! 0x%04X hourmeter value: [ %ld ]:\n",log[0].hexa, logs[logx].log[1].value.lv);
 		//--increment:
 		logx++; di+=16; ret++; 
 	} //-end multi parse loop
@@ -2340,7 +2356,7 @@ static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[])
 			strcpy(str,strReplace(".000000,",".00,\t",str)); //++trim trailing 0's if all 0's!!
 			strcpy(str,strReplace("nan,","nan, \t",str)); 
 		} else {  snprintf(str,(size_t)16,"%hu,\t",tmp); } 
-		//--Print Profile Template: str==value
+		//--Print Profile Template: str==value   
 		fprintf(fp,"#0x%04X, %s \t[%s] %s\n", (int) eprom0[ii].hexa, str, eprom0[ii].unit, eprom0[ii].string); 
 	}
 	fflush(fp); setvbuf(fp, NULL, _IOFBF, 0);
@@ -2402,10 +2418,10 @@ const char* chkProfile(char doo, char* profileName) {
 			if (token) { trimP(token); result=strlen(token); }
 			else {result = 0; }  if (!result) { fprintf(stderr,">ERROR no value for register [0x%04X]\n",eeprom); 
 				continue; } //--skip if nothing, warn or error. 
-			//--Profile: Assign values:
+			//--Profile: Assign eeprom values:
 				profileIn[st].hexa = eeprom; 
-				strncpy(profileIn[st].sv, token, 16); //(...save value as string for now...)!!!!!
-					if (debug>3) printf("->[%s]\t", token); //
+				strncpy(profileIn[st].sv, token, 16); //-:save value (...as string for now...)!!!!!
+				if (debug>3) printf("->[%s]\t", token); //
 			//--//--THIRD 		------------------------------------------:
 			token = strtok(NULL, ",\n"); 
 			//--trim whitespace,etc... && ! isspace((unsigned int)token[0])
@@ -2468,7 +2484,10 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 		//--Voltage safety check?--  [18700==10.09]    //ranges: 10...30 or 0 (multiply by battery multiplier?)
 		} else if ( strcmp(eprom[ep].unit,"v")==0 //&& profileIn[pi].value.fv != 0	//--:min & max check   != 0xE01A
 				&& ((minV && profileIn[pi].value.fv < minV) || (maxV && profileIn[pi].value.fv > maxV)) ) { 
-			if (eprom[ep].hexa == 0xE01B && (maxV && profileIn[pi].value.fv < (maxV+1))) { skip=0; }//-:HVD, ... ???????!
+			//--Maxmax: HVD:  			,... 		???????!!!!!!!!!!!!!!!!!!hack!
+			if (eprom[ep].hexa == 0xE01B && (maxV && profileIn[pi].value.fv < (maxV+1))) { skip=0; }
+			//--:Allowable 0 voltages: -- Turning OFF==0 voltage.   ...or allow all to be zero?
+			else if (profileIn[pi].value.fv==0 && (eprom[ep].hexa==0xE001 || eprom[ep].hexa==0xE007 || eprom[ep].hexa==0xE010 || eprom[ep].hexa==0xE01D || eprom[ep].hexa==0xE033 || eprom[ep].hexa==0xE036)) {skip=0;} 
 			else { skip=1; 
 				fprintf(stderr," 0x%04X = [ %s ] !WARNING! new voltage is very low or very high\n"
 									"\t\t voltages must be between %.2f and %.2f ! [%f! == %hu]\n",
