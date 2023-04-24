@@ -19,7 +19,7 @@
  	//--MaxLimit string lengths of global config settings:? (<128)? - fileOut , profileDir , (profile)
 	//----total char strln > 256: ... printOut(), jsonOut():jsontxt[655] is biggest.
  *
- *   	+cvs output!, !externalize configuration!, +wide char support, 
+ *   	+cvs output not working!, !externalize configuration!, +wide char support, 
  *  ++ Profiles: custom descriptions vs. translation, +only in profiles [debug for now] filter in chkProfile(), 
  * +------cmd arg: -d toggle display ,  late night normalization as option?? not for -s[ilent]
  *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
@@ -47,13 +47,13 @@ Notes:
 #define CUPDATEABLE 14 	/*  */
 #define UPDATEABLE 37 	/*  */
 #define MSMPPT    0x01	/* Fallback modbus address of the MPPT */ //---:[0xE034] */
-#define VERSION   1.01
+#define VERSION   1.00
 int MAX_CACHE_SIZE = 200000;		//-:max file size (bytes) before rebuilding
 
 /* //---------------------CONFIGURATION---------------------------------------//: */
 //static char externalize_config=0; //--:read configuration from file and use below as fallbacks? 
 //--------------------------------------:   will create file on startup if none exists.
-unsigned char modbusId=0;  //:modbus address of the MPPT [0xE034]: 0==Default (MSMPPT)
+unsigned char modbusId=0;  //:Default modbus address [0xE034] of the MPPT: 0==MSMPPT
 char display=1; 
 static char date_format[64] = "%a %b %d %Y"; //--format for dates (w/o time)
 char json=0; char cvs=0; //---create json [or cvs] files
@@ -467,8 +467,8 @@ int main(int argc, char *argv[]) {
 		else if (strcmp(argv[i], "eeprom")==0) { just_EEPROM = 1; display=0; } 
 		//--numeric exit errors:
 		else if (strcmp(argv[i], "-s")==0) {  sil = 1;  }
-		//--toggle display: 			 Header vs. info display
-		else if (strcmp(argv[i], "-d")==0) { display=display?0:1; } //--needs to be unique char!!!
+		//--toggle display:						 Header vs. info display
+		else if (strcmp(argv[i], "-d")==0) { display=display?0:1; } //--needs to be a diff char!!!
 		//--Logs:
 		else if (strcmp(argv[i], "logs")==0) {  action = "logs"; i++; if (!argv[i]) return -1;
 			//if (strcmp(argv[i],"cache")==0) { action = "debugc"; i++; mrk=5; break; } //mrk debug!!!!
@@ -1388,13 +1388,12 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			}
 			
 			/*/--Print Out:---------------------------------------------------------------//:sorting? */
-			if (debug>2 || raw) {  printf(">Log [%d]-----------------------:\n",a);  //:debug 
+			if (debug>2 || raw) {  printf("\n>Log [%d]-----------------------:\n",a);  //:debug 
 				printf("%s %s\n",(cdMarker==1?"Cached Date:":"Approximate Date:"),logs[a].date_s); 
 				if (cindex && timeSkipB){ snprintf(sbuf,sizeof(sbuf),"(date is within [%ld] hrs)",timeSkipB); }//-:buffer
 				printf(" (%.0f days ago)\t %s\n", daysago, (cindex && timeSkipB)?sbuf:""); 
 				//--iterate: 
-				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); } 
-				printf("----------------------------------\n\n"); 
+				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); }  
 			} else {
 				// * //--Formated:--------------------------------------------: * /
 				printf("################################## 0x%04X #####################################\n",logs[a].log[0].hexa);
@@ -1736,7 +1735,7 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 			start+=p*16; px+=p; bi+=p; total+=p; 
 			if (p<remaining) { if (debug>1){printf("readLogs: skipforward...last log...\t");} break; } //-:lastlog
 			//if (debug>2) printf(">!!skipping found:%d  (next start: 0x%04X , lx:%d)\n",total,start,lx);
-			if (lp && start>=bulk[0].start) {break;}
+			if (lp && start>=bstart) {break;}
 			
 			//--continue bulk[]s if done, else fill rest of bulk[b] logs:
 			if (bi>=bulk[b].i) { logx+=(px-logx); 
@@ -1833,7 +1832,7 @@ static short parseLogs(uint start, short logx, LogObj *logs, uint16_t datal[], s
 		//--Fill logs Metadata: -----------------------------------  logs[a].date,logs[a].date_s;
 		/* Hourmeter as date. ...real date after function: Dates Approximate */ 
 		logs[logx].date = (time_t) (log[1].value.lv)?log[1].value.lv:0; //--:hours ,time_t seconds*3600
-		if (debug>1 && bnum>1) printf(">parseLOGs! 0x%04X hourmeter value: [ %ld ]:\n",log[0].hexa, logs[logx].log[1].value.lv);
+		if (debug>1 && tnum>1) printf(">parseLOGs! 0x%04X hourmeter value: [ %ld ]:\n",log[0].hexa, logs[logx].log[1].value.lv);
 		//--increment:
 		logx++; di+=16; ret++; 
 	} //-end multi parse loop
