@@ -20,10 +20,10 @@
 	//----total char strln > 256: ... printOut(), jsonOut():jsontxt[655] is biggest.
  *
  *   	+cvs output not working!, !externalize configuration!, +wide char support, 
- *  ++ Profiles: custom descriptions vs. translation, +user string descriptions [debug for now] filter in chkProfile(), 
+ *  ++ Profiles: custom descriptions vs. translation, +only in profiles [debug for now] filter in chkProfile(), 
  * +------cmd arg: -d toggle display ,  late night normalization as option?? not for -s[ilent]
  *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
-			 HVD checking and set value to 0 in parseProfileValue()!, escapeStr("file",), 
+			 HVD checking and set value to 0 in parseProfileValue(), escapeStr("file",), 
  
  	RAM 0x0001: voltage multiplier - voltages stored as 12v & multiplied! PStar==1,2, TStar==1,2,4 (12,24,48)
 Notes:
@@ -46,14 +46,14 @@ Notes:
 #include <unistd.h>		//usedfor:
 #define CUPDATEABLE 14 	/*  */
 #define UPDATEABLE 37 	/*  */
-#define MSMPPT    0x01	/* Default modbus address of the MPPT */ //---:[0xE034] */
-#define VERSION   1.00
+#define MSMPPT    0x01	/* Fallback modbus address of the MPPT */ //---:[0xE034] */
+#define VERSION   1.01
 int MAX_CACHE_SIZE = 200000;		//-:max file size (bytes) before rebuilding
 
 /* //---------------------CONFIGURATION---------------------------------------//: */
 //static char externalize_config=0; //--:read configuration from file, use below as fallbacks? 
 //--------------------------------------:   will create file on startup if none exists.
-unsigned char modbusId=0;  //:Default modbus address of the MPPT: 0==default
+unsigned char modbusId=0;  //:Default modbus address [0xE034] of the MPPT: 0==MSMPPT
 char display=1; 
 static char date_format[64] = "%a %b %d %Y"; //--format for dates (w/o time)
 char json=0; char cvs=0; //---create json [or cvs] files
@@ -76,7 +76,7 @@ static const char update_all_defaults=0; //-:enable builtin 'update all' cmd.. (
 static char batteryVoltagesNote[255] = "Generic Battery Voltages:\n 100%:[12.7] volts, 90%:[12.6], 80%:[12.5], 70%:[12.3], 60%:[12.2], 50%:[12.1], 40%:[12.0], 30%:[11.9], 20%:[11.8], 10%:[11.7]";
 /*  Max / Min Voltages - All input voltages 12v in eeprom!  */
 static float maxV = 0; 	//:profile input safety check.. [default fallback=18] (EQ||HVD==highest)
-static float minV = 0;  //:profile input safety check.. [>10.3 - default fallback=11.5]
+static float minV = 0;  //:profile input safety check.. [(>10.3 volts) , default fallback=11.5]
 /* Debug */ 
 //--0=print Display, 1=print RAM/EEPROM & display, 2=verbose debug, >=3=no writes, >3=+logCache & profiles debug...
 char debug = 0; 
@@ -208,7 +208,7 @@ void pollingOut(modbus_t *ctxx, int count, RamObj *ram0, char* string);
 
 int main(int argc, char *argv[]) {
 	size_t num, nume; char* action = ""; char skip_RAM = 0; char mrk=0; char logOpt=0; //char action[] = "";
-	short logn=0; short tnum=0; long lint=0; long lbuf=0; //: logs...
+	short logn=0; short tnum=0; long lint=0; long lbuf=0; //: logs...long OR unsigned long?
 	//char config_file[128]=""; //-:external config file:
 	//strncpy(config_file,appendStr(3, outDir, fileOut, "_config.txt"),(size_t)128);
 	//--BUFFERs----------------------:
@@ -351,10 +351,10 @@ int main(int argc, char *argv[]) {
 	//----------------------------------------------------------------------------------- */
 	{	 short i = 1; //--argv[0] is program name.
   	 while (i < argc) { //printf("\t%d>arg[ %s ]\n", i, argv[i]);
-	    if (strcmp(argv[i], "-h")==0) { printf("\n__________OpenSource ProStar* MPPT Charge Controller Software_____________\n" 
+	    if (strcmp(argv[i], "-h")==0) { printf("\n__________ProStarMPPT* OpenSource Charge Control Software_____________\n" 
 			"\n %s (no options = default display output)\n\n"
 			" %s [output|control options] [update|logs options]\n\n"
-			"Output Options:\n\t poll, json, json+ (display info), debug, debug+ (verbose debug), eeprom, -d,\n"
+			"Output Options:\n\t poll, json, json+ (display info), debug, debug+ (verbose debug), eeprom,\n"
 				"\t -d (toggle info display), -s (silent)\n"
 				"\t debugn (to stdout), raw (output raw float16 values)\n\n"  //, 
 			"Control Options:\n\t reboot,   EQ [ON | OFF],\n"
@@ -466,10 +466,8 @@ int main(int argc, char *argv[]) {
 		else if (strcmp(argv[i], "eeprom")==0) { just_EEPROM = 1; display=0; } 
 		//--numeric exit errors:
 		else if (strcmp(argv[i], "-s")==0) {  sil = 1;  }
-		//--display
-		else if (strcmp(argv[i], "-d")==0) { display=display?0:1; } //--needs to be a diff char: Header vs. info display!!!
-		//--toggle display:
-		//else if (strcmp(argv[i], "-d")==0) {  display = display?0:1;  }
+		//--toggle display: 			 Header vs. info display
+		else if (strcmp(argv[i], "-d")==0) { display=display?0:1; } //--needs to be unique char!!!
 		//--Logs:
 		else if (strcmp(argv[i], "logs")==0) {  action = "logs"; i++; if (!argv[i]) return -1;
 			//if (strcmp(argv[i],"cache")==0) { action = "debugc"; i++; mrk=5; break; } //mrk debug!!!!
@@ -523,7 +521,7 @@ int main(int argc, char *argv[]) {
 			"*ProStarMPPT® is registered trademark to Morningstar Corp.\n"
 			"*( www.morningstarcorp.com )\n\n"
 			"____*_*_* OpenSource Artistic-2.0 license © 2023 by sunja - centerflowing.com *_*_*____\n\n",
-			//"(may also be copied under terms of GNU General Public License)\n\n"
+			//"(may also be copied under terms of GNU General Public License GNUv.2+ or later)\n\n"
 			argv[0], VERSION); return 0; }
 		//--Error:
 		else { printf(">Error with args\n\n"); exit(1); }
@@ -651,8 +649,8 @@ int main(int argc, char *argv[]) {
 	else if (mrk==5) { mrk=0; }
 	//-----------------------------------:
 
-//---Logs:
-static void *cdLabels[] = { &&cacheDParse0, &&cacheDParse1, &&cacheDParse2 }; //, &&cacheDParseDebug
+//---Logs:           //, &&cacheDParseDebug
+static void *cdLabels[] = { &&cacheDParse0, &&cacheDParse1, &&cacheDParse2, &&cacheDParse3, &&cacheDParse4 }; 
 //--debug logs block:
 if (strcmp(action,"debugc")==0) { // && debug > 2
 	/* --- Log Cache Debug ---------------------------------------- */
@@ -796,8 +794,8 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	//################################################################################################
 	//--Get Current Hourmeter:-----------------------------------------: 
 	int tmp[2] = {0x0036,0x0037}; upRegisters(ctx, ram, num, tmp, 2); 
-	 short x=0; x = getIndex(0x0037,num,ram); //--:Global! int?
-	now = ram[x].value.lv; x=0; //:now !!!
+	 short xx=0; xx = getIndex(0x0037,num,ram); //--:Global! int?
+	now = ram[xx].value.lv; xx=0; //:now !!!
 	/* ####################################--Header--#########################################-: */
 	uint16_t data[1]; //--:Global for individual reads. 'unsigned short' %hu  --deprecated except for here!--
 	//--:Date / time variables set:---------------------//
@@ -835,8 +833,8 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	/* ############################--Update Log Cache--###############################-: */
 	//--Update/Write log cache:--------------------------------:
 	long latest=0;	struct tm *tmStruct;  tmStruct = localtime (&c_time);   
-	if (real_date_logs) {  //...avoid late night? prefer afternoon?
-		if (tmStruct->tm_hour > 4 && tmStruct->tm_hour < 23){ 
+	if (real_date_logs) {  //...avoid late night? prefer afternoon? && tmStruct->tm_hour < 24
+		if (tmStruct->tm_hour > 4){ 
 				latest = writeLogCache(1); }
 		else {  latest = writeLogCache(0); } //create if (!logcachefile)
 		if (latest && latest <= (now-48)) { latest = writeLogCache(1); } //--:update anyway
@@ -850,14 +848,14 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	
 	/* ############################ TRIGGER COILS ###################################### */
 	//-----add message (json) export opt, instead of stdout...
-	if (trigger_coils) { x=0;  printf("\n\nTriggering Coil Resets: \n");
+	if (trigger_coils) { xx=0;  printf("\n\nTriggering Coil Resets: \n");
 		size_t numc = sizeof(coils) / sizeof(coils[0]); 
 		size_t upC = CUPDATEABLE; //sizeof(coil_updates) / sizeof(coil_updates[0]);
 		for (short ii=0; ii< (int)upC; ii++) { short ci;
 			if (!coil_updates[ii]) break; //--done. end of coil_updates.  	
 			//--Link coil_updates[] to coils struct...:-----------------------:
 			//--EQ coil:  --EQ address !hack!--
-			if (coil_updates[ii]==0x0013) { x=1;  coil_updates[ii] = 0x0000; ci = 0; } 
+			if (coil_updates[ii]==0x0013) { xx=1;  coil_updates[ii] = 0x0000; ci = 0; } 
 			else ci = getCoil(coil_updates[ii], numc, coils);
 			//--error exit:
 			if (!coils[ci].logical || ci == -1) { //--
@@ -884,7 +882,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				 if (rc == -1) { fprintf(stderr, "%s\n", modbus_strerror(errno)); return -1; }
 		}	}
 		//--finish: if EQ toggled, display current target voltage. 
-		if (x) {	memset(&coil_updates[0], '\0', sizeof(coil_updates));  coil_updates[0] = 0x0024; 
+		if (xx) {	memset(&coil_updates[0], '\0', sizeof(coil_updates));  coil_updates[0] = 0x0024; 
 			upRegisters(ctx, ram, num, coil_updates, 1); tnum = getIndex(0x0024,num,ram);  //ram[tnum].value.fv;
 			printf("\nBattery Target V:	%.2f v\n",ram[tnum].value.fv);
 		} 
@@ -904,13 +902,13 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	________________________________________________________________________________________________ */
 	//-Build bulk data:
 	struct bulkData bulk [16]; //, *bulkp; 
-	short y=0; x = 1; //:x declared under Header
+	short y=0; xx = 1; //:xx declared under Header
   if (! skip_RAM) {  	//-RAM---
   	//--Build Bulk Block:
 	bulk[0].start = ram[0].hexa; bulk[0].i = 1;
 	for (int ii=1;ii<num;ii++) { 
-		if (ram[ii].hexa == (bulk[y].start+x)){ bulk[y].i++; x++; } 
-		else { y++; bulk[y].start = ram[ii].hexa; bulk[y].i = 1; x=1; }  
+		if (ram[ii].hexa == (bulk[y].start+xx)){ bulk[y].i++; xx++; } 
+		else { y++; bulk[y].start = ram[ii].hexa; bulk[y].i = 1; xx=1; }  
 	} // * /
 	
 	//--Loop bulk registers array:   (sizeof(bulk) / sizeof(bulk[0]));
@@ -940,10 +938,10 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	
 	/* ################################## Read the EEPROM ####################################  */
 	//----Build Bulk Read:
-	bulk[0].start = eprom[0].hexa; bulk[0].i = 1; y=0; x = 1;
+	bulk[0].start = eprom[0].hexa; bulk[0].i = 1; y=0; xx = 1;
 	for (int ii=1;ii<nume;ii++) { 
-		if (eprom[ii].hexa == (bulk[y].start+x)){ bulk[y].i++; x++; } 
-		else { y++; bulk[y].start = eprom[ii].hexa; bulk[y].i = 1; x=1; }  
+		if (eprom[ii].hexa == (bulk[y].start+xx)){ bulk[y].i++; xx++; } 
+		else { y++; bulk[y].start = eprom[ii].hexa; bulk[y].i = 1; xx=1; }  
 	} 
 	
 	if (!sil && debug && strcmp(action,"current_settings")!=0) { 
@@ -1076,9 +1074,9 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	
 	fprintf(fp,"\n__Settings & Info_________________________________________________________________\n[%s]\n", ctime_s);
 	fprintf(fp,"%s\n\n", batteryVoltagesNote); //filtering??
-	fprintf(fp,"DipS:	%s\n__Alarms / Faults:__\n0x0022:  %s\n", 
+	fprintf(fp,"DipS:	%s\n__Alarms / Faults:__\n(0x0022): %s\n", 
 				ram[getIndex(0x003A,num,ram)].value.sv, ram[getIndex(0x0022,num,ram)].value.sv);
-	fprintf(fp,"Alarms:  %s\n	\nAlarms (day):	%s\n", ram[getIndex(0x0039,num,ram)].value.sv, ram[getIndex(0x0048,num,ram)].value.sv);
+	fprintf(fp,"%s\n(day): %s\n", ram[getIndex(0x0039,num,ram)].value.sv, ram[getIndex(0x0048,num,ram)].value.sv);
 	
 	/*/------Print OUT to stdout or file or both:-----------------------------------------:
 	 fflush(fp); 	//--file - append to debug file
@@ -1104,8 +1102,9 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	{ //-:logBlock: if(strcmp(action,"logs")==0) 
 		struct logStruct logs [256];     //ex. logs[x].log[0].value.lv => hrs , logs[x].log[y].typ => value
 		long search=0; uint start=0; //int logical; //Only start is needed!......
-		x=0; char strbuf [256]=""; 
-		//--Log Cache scope variables: 
+		char strbuf [256]=""; char sbt=0; //:sbt==is logDate inbetween..
+		//--Log Cache scope variables:    [available from main:short xx,char skip_RAM,char mrk,] 
+		long earLog=0; xx=0; //:earliest log hrmtr
 		short nextCD=0; long timeSkipA=0; long timeSkipB=0;   
 		time_t cacheDate=0; int cindex=0; short cdMarker=0;   
 		time_t targetD=0; 
@@ -1115,6 +1114,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		//--LogCache:-----------------------------:
 		//---logCache[0].xt == real number of cached dates! starting at 1.
 		if ( real_date_logs ) { long cht = readLogCache(""); 
+			earLog = logCache[logCache[0].xt].hrmtr-logCache[logCache[0].xt].nHrs-21; //--earliest log time w/buffer
 			if (debug) { printf(">Log cache, latest [ %ld ] readLogCache: [ %d ] \n\n", 
 										logCache[1].hrmtr-logCache[1].nHrs, (int)cht); }
 		} else { logCache[0].xt=0; }
@@ -1127,8 +1127,8 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		int hrofday=0; tmStruct = localtime (&c_time); //:needed reinit. struct tm *tmStruct;   //double tm declare!!
 		if (tmStruct != NULL) { hrofday=tmStruct->tm_hour+1;  c_time -= tmStruct->tm_min*60; //0-59 ???c_time???????
 			//--late night? normalize search to previous day: gets confusing. (optional?)
-			//if (display && hrofday < 3) { nNow = (now - hrofday) - nH; 
-			//		normT = (c_time-(hrofday*3600))-(nH*3600); x=1;	} //-:c_time targetD buffer
+			//if (late_night && hrofday < 3) { nNow = (now - hrofday) - nH; 
+			//		normT = (c_time-(hrofday*3600))-(nH*3600); 	} //-:c_time targetD buffer
 			//else{ //--increase*/decrease to normalize
 			nNow = (24-hrofday); normT = (c_time+(nNow*3600))-(nH*3600);  nNow = (now + nNow) - nH;//def:6pm 
 		} //} 
@@ -1164,7 +1164,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				//--Found Match! date cache:-------------------------------:else 
 				if (cacheDate && cindex>0 && cindex<=logCache[0].xt) { cdMarker=-1; } //date set below!
 				//--Search found possibly close matches:-------------------:nextCD==cindex-1;
-				else if (cacheDate && cindex<0) {   cindex=cindex*-1; } //-:still required  
+				else if (cacheDate && cindex<0) {   cindex=cindex*-1; sbt=1; } //-:still required  
 				//--Nothing found in cache:  --match is after-- (cindex==0)
 				
 				if (debug>1) {  //if (debug>3) 
@@ -1244,6 +1244,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			//memset(&bufs[0], '\0', sizeof(bufs));  //--not needed if using snprintf next...
 		}
 		
+		
 		float daysago = 0; time_t logDate; 
 		//__Print Loop: -----------------------------------------------------------------------------//--: 
 		if (!sil && !json) printf("\n>Found (%d) Logs:______________________________________ \n",totalLogs); 
@@ -1254,67 +1255,83 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			} else { //--Parse hours into a date:----------------------------------: 
 				//time_t curr_hrs = c_time/60/60; 				//--:unix hrs
 				logDate = logs[a].date; 	logs[a].date=0;		//-:hrs here
-				//--hrs ago:  
+				//--hrs ago: !!subtract logDate from now and add buffer to get days ago, then subtract from time.
 				//ee = (nNow - logDate); //nNow is normalized but breaks things	** !!!! **
 				//if (debug>1) printf("<norm daysago=%f >\n",(ee/24.0));
 				long ee = (now - logDate); //:hrsago unbuffered :logDate exact exactness 
 				//if (debug>1) printf("<raw daysago=%f >\n",(ee/24.0));
 				
-				
-				/* //----------  Modify Date buffer ---------------------------//  */
-				//--Use logCache: --------------------------:   ...logDate is 1hr past sunset.. 
+				/* //----------  Modify Date buffer --------------------------------------------------//  */
+				//!--Use first logCache search: --------------------:   ...logDate is 1hr past sunset.. 
 				if (a==0 && cdMarker==-1) { logs[a].date = cacheDate;  } //-:search was exact match in cache
-				//--User input buffer: (hrs for correct date)
+				//!--User input buffer: (increase hrs for correct date calc)------:
 				else if (lbuf_input){ ee+=lbuf; if (debug>1) printf(">>>buffering %ld hours\n",lbuf); }   
 				
-				//-LogCache: skip first search-opt log, +skip if newer than cache: 1st cache search for..:
-					//!Bug: first log match=latest cache [cindex=1], next log is... OR next log is oldest... !!!!!!
-				else if (logCache[0].xt && logDate <= logCache[1].hrmtr+36 && (a || logOpt!=2)) { //-:(skip 1st daysago search)
-					//--LogCache: modify dates here, modify search above... 
+				//!--LogCache: skip first search-opt log, +skip if newer than cache. 1st cache search for..:
+				//else if (logCache[0].xt && logDate <= logCache[1].hrmtr+36 && (a || logOpt!=2)) {
+				else if (logCache[0].xt && (a||logOpt!=2)) { //-:(skip 1st daysago search)
+					//(logDate>=earLog &&  || (logDate<earLog && !a && logOpt==2))
+					/*/--LogCache: modify dates here, modify search above... */
 					//-----logCache[0].xt == real number of cached dates! starting at 1
-					//--SearchCache: new || previous was after/before all cache dates, or was latest || log-wrap-around:...
-					if (!cindex || cindex==1 || (cindex>logCache[0].xt && !lbuf) || (a && logDate < logs[a-1].log[0].value.lv)) { 
-						nextCD=0; cacheDate=0; searchLogCache(logDate, &cacheDate, &cindex); 
+					char cdp=0; //cdp==true if searchLogCache(logDate,) , sbt==true if cindex<0 (for skipping reparse)
+					//--SearchCache: new || prev. was latest || before all & !lbuf || log-wrap-around:...
+					//if (!cindex || cindex==1 ||(cindex>logCache[0].xt && !lbuf)||(a && logDate < logs[a-1].log[0].value.lv)){
+					if (!cindex || cindex==1 ||(logDate < earLog && !a)||(a && logDate < logs[a-1].log[0].value.lv)){
+						//-----(!cindex && !a)
+						nextCD=0; cacheDate=0; searchLogCache(logDate, &cacheDate, &cindex);  cdp=1; sbt=0;
 						//--jump to parsing block:
 						cdMarker=1; goto cacheDParse; //-:parse block  
-						cacheDParse1: ;
+						cacheDParse1: ;   
 						//-set log date if match:  
 						if (cindex>0 && cindex<=logCache[0].xt) {  logs[a].date = cacheDate; } 
-						else if (cindex<0) cindex=cindex*-1; 
+						else if (cindex<0){ cindex=cindex*-1; sbt=1; } //
 					} else if (! nextCD && cindex && cindex<=logCache[0].xt) {  nextCD = cindex-1; } //-:init nextCD
 					
 					if (logs[a].date) { if (debug>1) printf(".");  } //-:exact match skip:dummy (exact: nextCD can eq 0!) 
-					//--After||Before all cache dates? nothing to do..  (before all: lbuf set)
+					else if (cdp) {  if (debug>1) printf(">>>done.\n");  }
+					/*/--Above searchLogCache() skipped: check logDate buffers or re-search below... */
 					//---:before: cindex>.xt & nextCD==0, after: cindex==0 & nextCD==0, 
-					else if (!cindex || cindex>logCache[0].xt || !nextCD || nextCD<0) { //check..lbuf?? 
-						if (debug>1) printf(">>>Nothing more doing, before or after logCache.\n");  //>1
-					} //--below uses nextCD to increment.. //?timeSkipB=0; 
+					//else if (cindex>logCache[0].xt || !nextCD || nextCD<0) {  		?after? nextCD should eq 0..
+					else if (logDate<earLog || !nextCD || nextCD<0 || (logDate>logCache[1].hrmtr+36)) {  
+						if (debug) printf(">>>Nothing more doing, before or after logCache. [buffer:%ld]\n",lbuf); 
+					} //--below uses nextCD to increment.. 
 					
-					//--use next cache date if match:  !!!!----------time calculation --------------!!!!!!!
+					//--if match use next cache date:  !!!!----------time calculation --------------!!!!!!!
 					else if ((logDate+8) > logCache[nextCD].hrmtr && (logDate-22) < logCache[nextCD].hrmtr){
-						//--recompute lbuf if needed: 
-						if (! lbuf) { lbuf = ((c_time - logCache[nextCD].udate)/3600)-(now-logCache[nextCD].hrmtr); 
-							if (lbuf<0){ lbuf=0; } }   if (debug>1) printf(">>>Next cache date is a match>>\n"); //>1
-						logs[a].date = logCache[nextCD].udate;   cindex=nextCD;  nextCD--;  timeSkipB=0;//zero
+						cindex=nextCD;  sbt=0; //timeSkipB=0;//zero     
+						if (debug){ printf(">>>Next cache date is a match>>[%d]\n",cindex); }
+						//--recalculate lbuf if needed: 
+						cdMarker=3; goto cacheDParse; //-:parse block  
+						cacheDParse3: ;
+						logs[a].date = logCache[cindex].udate; 
 					}
-					//--before next cache date increment: no change to lbuf..
-					else if (debug>1 && logDate < logCache[nextCD].hrmtr) { 
-						printf(">>>before next cache date %s>>\n", (!lbuf? "(no buffer)":""));  //>1
-					}
+					//--before next cache date - no change to lbuf: ..otherwise recalculate below: (and set sbt) 
+					else if ((sbt || !lbuf) && logDate < logCache[nextCD].hrmtr) { 
+						if (debug){ snprintf(sbuf,sizeof(sbuf),"(buffer of %ld hrs)",lbuf);
+							printf(">>>before next cache date>> %s\n", (!lbuf? "(no buffer)":sbuf)); } 
+					} 
 					
-					/* //----------- After Next Cache Date ------------------------ */
-					//--after next: re-search logCache & recompute lbuf, nextCD && ...   
-					else if (logDate > logCache[nextCD].hrmtr) { 
-						 if (debug>1) printf(">>>Log date after next cache date. Searching again..\n"); 
-						nextCD=0; cacheDate=0; searchLogCache(logDate, &cacheDate, &cindex); 
-						cdMarker=2; goto cacheDParse; //-:parse block  
-						cacheDParse2: ;
-						//--set log date if match: 
-						if (cindex>0 && cindex<=logCache[0].xt) { logs[a].date = cacheDate; }
-						else if (cindex<0) cindex=cindex*-1; 
-						//else if (cindex>logCache[0].xt) {  } //before any logs...
-					} //else {}  //--same logCache period: use unaltered lbuf 		
-				}  //--:end logCache block  //-:else if (logCache[0].xt && a) { cindex = 0; }//reset? after latest cache.
+					/* //----------- After Next Cache Date or update buffer ------------------- */
+					else { //--recalculate lbuf, nextCD , timeSkipB 
+						if (logDate < logCache[nextCD].hrmtr) { 
+							if (debug) { snprintf(sbuf,sizeof(sbuf),"buffer of %ld)",lbuf);
+								printf(">>>before next cache date. (recalculating... %s\n", (!lbuf? "no buffer)":sbuf)); }
+							cindex=-cindex;
+							cdMarker=4; goto cacheDParse; //-:parse block  
+							cacheDParse4: ;	 cindex=cindex*-1; sbt=1; 
+						}
+						else { //--re-search logcache: (logDate > logCache[nextCD].hrmtr)
+							if (debug) { printf(">>>Log date after next cache date. Searching again..\n"); }
+							nextCD=0; cacheDate=0; searchLogCache(logDate, &cacheDate, &cindex); cdp=1;
+							cdMarker=2; goto cacheDParse; //-:parse block  
+							cacheDParse2: ;	 sbt=0; //..reset sbt mark
+							//--set log date if match: 
+							if (cindex>0 && cindex<=logCache[0].xt) { logs[a].date = cacheDate; }
+							else if (cindex<0){ cindex=cindex*-1; sbt=1; }
+							//else if (cindex>logCache[0].xt) {  } //before any logs...
+						}
+					}  		
+				}  //--:end logCache block //-:else if (logCache[0].xt && a) { cindex = 0; }//reset? after latest cache.
 				
 				cdMarker=0; 	
 				if (logs[a].date) { cdMarker=1;  } 	//--:logcache date match! 
@@ -1364,13 +1381,18 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			}
 			
 			/*/--Print Out:---------------------------------------------------------------//:sorting? */
-			if (debug>2 || raw) {  printf("\n>Log [%d]-----------------------:\n",a);  //:debug  
-				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); }  
+			if (debug>2 || raw) {  printf(">Log [%d]-----------------------:\n",a);  //:debug 
+				printf("%s %s\n",(cdMarker==1?"Cached Date:":"Approximate Date:"),logs[a].date_s); 
+				if (cindex && timeSkipB){ snprintf(sbuf,sizeof(sbuf),"(date is within [%ld] hrs)",timeSkipB); }//-:buffer
+				printf(" (%.0f days ago)\t %s\n", daysago, (cindex && timeSkipB)?sbuf:""); 
+				//--iterate: 
+				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); } 
+				printf("----------------------------------\n\n"); 
 			} else {
 				// * //--Formated:--------------------------------------------: * /
 				printf("################################## 0x%04X #####################################\n",logs[a].log[0].hexa);
 				printf("%s	%s\n",(cdMarker==1?"Cached Date:\t":"Approximate Date:"),logs[a].date_s); 
-				if (cindex && timeSkipB) printf("\t\t(date is within [%ld] hrs)\n",timeSkipB);//-:buffer vagueness >12?
+				if (cindex && timeSkipB>4) printf("\t\t(date is within [%ld] hrs)\n",timeSkipB);//-:buffer vagueness >6?
 				printf("Time of Log: %ld hrs		(%.0f days ago)\n",logs[a].log[0].value.lv, daysago);
 				printf("Min Battery volts:	%f v	Max Array volts:	%f v\n",logs[a].log[8].value.fv, logs[a].log[12].value.fv);
 				printf("Max Battery volts:	%f v	Load Ah:		%f Ah\n",logs[a].log[9].value.fv, logs[a].log[11].value.fv);
@@ -1395,78 +1417,71 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		/*/--Multi-LogCache Search: search precision, get accurate dates.. matched to external cache log
 		 	//---cindex: 0=gt last, 1(+)=within 48hrs, 2(minus)=gt cindex & lt next, 3(total++)=lt oldest
 			//----timeSkipA/B are Hours diff from continuous use [hrmtr] date == buffer.----: */
+			//---- computed log dates == c_time-( ((now-logDate)+lbuf)*3600 )  
 		 	//--logCache[cindex].nHrs = hrs to add to cacheD to normalize time..affects what date a log is given.
-		 if (debug>2) printf("parsing [%d] in goto block:\n",cdMarker); //" %ld",targetD
-		 	//*/--Before cache Dates:-------------------------------------------------: // */
+		 	if (debug>2) printf("parsing [%d] in goto block:\n",cdMarker); //" %ld",targetD
+		 	/*/--Before cache Dates:-------------------------------------------------: // */
 			if (cindex>logCache[0].xt) { if (debug) printf(">Target Date is before any log cache dates.\n"); 
 				//--Use oldest cache date for buffer:----------------------: {been here already?} 
-				cindex--; //--:oldest log, change back before returning!
+				xx=1; cindex--; //--:oldest log, change back before returning! 
+				timeSkipB = (c_time-logCache[cindex].udate)/3600 - (now-logCache[cindex].hrmtr);
 				if (cdMarker==0||cdMarker==-1) { //init-ing search  && cindex>logCache[0].xt)
 					//--Diff b/t target date and cache dates: ¡¡targetD date is OLDEST possible!!
-					float last = (logCache[cindex].udate-targetD)/3600; //-:hrs/24.0   //long expectedD = search; 
-					timeSkipB = (c_time-logCache[cindex].udate)/3600 - (now-logCache[cindex].hrmtr);
+					float last = (logCache[cindex].udate-targetD)/3600; //-:hrs/24.0   //long expectedD = search;
 					 if (debug>1) printf(">>timeSkipB: %ld  ,  oldest: %f\n",timeSkipB,last);																	
 					//--refactor search:-------------------:
 					search = logCache[cindex].hrmtr-last; //-:using last
 				  	 if (debug>1) printf(">>oldest [%d] %ld timestamp to target being used. :> %.2f \n",cindex, 
 														logCache[cindex].hrmtr-logCache[cindex].nHrs, last/24); 
 				} else { 
-					timeSkipB = (c_time-logCache[cindex].udate)/3600 - (now-logCache[cindex].hrmtr);
 					 if (debug>1) printf(">>oldest [%d] %ld timestamp to target being used. \n",cindex, logCache[cindex].hrmtr-logCache[cindex].nHrs); 
 				}  
 				if (debug>1) printf(">>(New hrmtr correctness: [%ld]) using oldest value\n",timeSkipB);
 				if (timeSkipB<0){ timeSkipB = 0; } //timeSkipB*-1
-				nextCD=0; lbuf=timeSkipB; //--:lbuf - last known buffer... 
+				nextCD=cindex; lbuf=timeSkipB; //--:lbuf - last known buffer... 
 				cindex++;      timeSkipB=0; //zero. no need to display buffer. 
+				if (debug && cdMarker && lbuf) printf("Buffer of %ld hours\n", lbuf);
 			}
 			
-			//*/--Found Match! date cache:--------------------------------------------: // */
+			/*/--Found Match! date cache:--------------------------------------------: // */
 			else if (cacheDate && cindex>0) { 
 				if (cdMarker==0||cdMarker==-1) search=logCache[cindex].hrmtr;  
 				nextCD=cindex-1;     //-can correct time here..cachetime -> logtime.
 				//--lbuf needed for dating other logs: ??used???
 				lbuf = ((c_time - logCache[cindex].udate)/3600)-(now-logCache[cindex].hrmtr);  
-				if (lbuf<0){ lbuf=0; } //timeSkipB=0; //zero
-				if (debug) { printf(">>Found exact match (buffer: %ld , timeSkipB: %ld)\n\n",lbuf,timeSkipB);  } //>1???????
+				if (lbuf<0){ lbuf=0; } timeSkipB=0; //zero
+				if (debug) { printf(">>Found exact match (buffer: %ld)\n",lbuf);  } 
 			}
 			
-			//*/--Search found possibly close matches:--------------------------------: // */
+			/*/--Search found possibly close matches:--------------------------------: // */
 			else if (cacheDate && cindex) { 	cindex=cindex*-1;  nextCD=cindex-1;   
-				//--:target gt previous, lt next-----------------------------:   !round down lbuf!
-				//--Find which cache ts date/buffer is better base for date... refactor lbuf:
-				//notes:-------------------------------:  ..lbuf==timeSkipB most of time...
-				//(previous+nextCache)=total hrs;     //if (time b/t != hrs b/t)-: 
-				//(([nextCD].udate-[cindex].udate)/3600 != ([nextCD].hrmtr-[cindex].hrmtr)) { timeSkipB }
-				//---- computed log dates == c_time-( ((now-logDate)+lbuf) *3600)  
+				//--:target gt previous, lt next------------------------------: 
 				float previous = 0;	 float nextCache = 0;  long expectedD=0; //:checking date buffer
-				if (cdMarker==0||cdMarker==-1) { //init-ing search:   
-					//--Date Buffer:-----------------gaps in time since now-------:
-					timeSkipA = (c_time-logCache[nextCD].udate)/3600 - (now-logCache[nextCD].hrmtr);
-				  	timeSkipB = (c_time-logCache[cindex].udate)/3600 - (now-logCache[cindex].hrmtr);
-					//--logCache dates nonexact!  neg values due to normalization, fixed below.
-					  //--subtract logCache[cindex].nHrs: ?!?!!! 
-					  //timeSkipA -= logCache[nextCD].nHrs;  timeSkipB -= logCache[cindex].nHrs;
+				//--Date Buffer:-----------------gaps in time since now-------:
+				//-hrs before/after:	buffer: timeSkipA is min, timeSkipB is max. 
+				timeSkipA = (c_time-logCache[nextCD].udate)/3600 - (now-logCache[nextCD].hrmtr);
+				timeSkipB = (c_time-logCache[cindex].udate)/3600 - (now-logCache[cindex].hrmtr);
+				//notes:---------------------------------------:   (previous+nextCache)=total hrs;
+				//-Find which cache ts date/buffer is better base for date...  
+				//--if (time b/t != hrs b/t):--------:   ..lbuf==timeSkipB most of time...
+				//---(([nextCD].udate-[cindex].udate)/3600 != ([nextCD].hrmtr-[cindex].hrmtr)) { timeSkipB }
+				//--logCache dates nonexact!  neg values due to normalization, fixed below.  !round down lbuf?
+				
+				if (cdMarker==0||cdMarker==-1) { //init-ing search:-----:   
 					//--Diff b/t target date and cache dates: ¡¡targetD date is OLDEST possible!!
 					previous = (targetD-logCache[cindex].udate)/3600; //-:hrs/24.0   !(-lbuf)
 					nextCache = (logCache[nextCD].udate-targetD)/3600;//-:hrs/24.0   !(+lbuf)
 					//--refactor search, check buffer:
 					search = logCache[cindex].hrmtr+previous; //-:using previous 
 					expectedD = search; //search is hrmeter base! targetD is time based! both are normalized!
-					
-				} else { //-Logs:---------------------------------------: 
-					/* //-update lbuf to bring hrsago to correct date.:     subtract logCache[cindex].nHrs ?!?!! */
-					timeSkipA = (long) (c_time-logCache[nextCD].udate)/3600 - (now-logCache[nextCD].hrmtr);
-					timeSkipB = (long) (c_time-logCache[cindex].udate)/3600 - (now-logCache[cindex].hrmtr);
-					
-					//-hrs before/after:	buffer: timeSkipA is min, timeSkipB is max. 
-					targetD = normT-(((nNow-logDate)+timeSkipA)*3600); //  !normalize check?! !!!!!!!     
+				} else { //-Logs:---------------------------------------: subtract logCache[cindex].nHrs ?!?
+					targetD = normT-(((nNow-logDate)+timeSkipA)*3600); //  !normalize check?!     
 					//--Check buffer Range:  use c_time? normT? , ?(nNow just inits search)
 					/* example: targetD=6pm+secs , targetDa=6pm minus secs  , targetDb=4pm (iso-timeSkipB+=2hr) * /
 					 int targetDb = logCache[cindex].udate+((logDate-logCache[cindex].hrmtr)*3600);//needs iso-timeSkipB
 					 int targetDa = logCache[nextCD].udate-((logCache[nextCD].hrmtr-logDate)*3600);//timeSkip builtin
 					 //---targetDa is same as targetD (other than secs).
 					printf(">in-between Debug: TargetD = %ld , a=%d , b=%d \n", targetD, targetDa, targetDb); // */
-					
 					previous = (targetD-logCache[cindex].udate)/3600;   //-:hrs/24.0 		
 					nextCache = (logCache[nextCD].udate-targetD)/3600;  //-:hrs/24.0
 					expectedD = logCache[cindex].hrmtr+previous+timeSkipB; //-:check date overrun!
@@ -1482,23 +1497,24 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				if (timeSkipB != timeSkipA) { timeSkipB= timeSkipB-timeSkipA; }	
 				else { timeSkipB = 0; }
 				
+				//-recalculate lbuf to bring hrsago to correct date.:    timeSkipB becomes buffer! 
 				//--DEBUGing ---------------------- timeSkipB---------:-----------: !!!
 				if (debug>1 && (logCache[nextCD].udate-logCache[cindex].udate)/3600 != (logCache[nextCD].hrmtr-logCache[cindex].hrmtr)) { long expDn = (logCache[nextCD].hrmtr-nextCache);
-					printf(">TimeSkip in hrmtrs: %ld ts != %ld hrm -  [%ld]from later %s\n",((logCache[nextCD].udate-logCache[cindex].udate)/3600), (logCache[nextCD].hrmtr-logCache[cindex].hrmtr), expDn, 
-							(expDn<logCache[cindex].hrmtr?"(expected date is less than prev!)\n":"(ok)")); 
+					printf(">TimeSkip in hrmtrs: %ld ts != %ld hrm -  later base?:[%ld] %s\n",((logCache[nextCD].udate-logCache[cindex].udate)/3600), (logCache[nextCD].hrmtr-logCache[cindex].hrmtr), expDn, 
+							(expDn<logCache[cindex].hrmtr?"(wrong!)\n":"(ok)")); 
 				} //--:DEBUG! ---------------------------- */
 				
 				//--Basic Buffer Check: use later if gt:----------: previous: 3 weeks(504) ?longer? 30 days??
 				if (expectedD>logCache[nextCD].hrmtr || previous>504) { //&& previous>nextCache
-					lbuf = timeSkipA;  //-!!!! timeSkipB is displayed buffer!
+					lbuf = timeSkipA;  //-!
 					if (cdMarker==0||cdMarker==-1) search = logCache[nextCD].hrmtr-nextCache;  
-					if (debug>1) printf(">>later timestamp [%d] %ld to target %.2f days. (previous %ld: %.2f)\n\n",nextCD, 
+					if (debug>1) printf(">>later timestamp [%d] %ld to target %.2f days. (previous %ld: %.2f)\n",nextCD, 
 							logCache[nextCD].hrmtr-logCache[nextCD].nHrs,nextCache/24,logCache[cindex].hrmtr-logCache[cindex].nHrs,previous/24); //
 				//} else if ((logCache[nextCD].hrmtr-nextCache) < logCache[cindex].hrmtr) { for precision..??
 				//--Full buffer:--------------------------------:
 				} else {  lbuf = timeSkipA+timeSkipB; //--info/debug message: roundup(previous/24)
 					//if (cdMarker==0||cdMarker==-1) search += timeSkipB;  
-					if (debug>1){ printf(">>previous timestamp [%d] %ld to target %.2f days. (later %ld: %.2f)\n\n",
+					if (debug>1){ printf(">>previous timestamp [%d] %ld to target %.2f days. (later %ld: %.2f)\n",
 							cindex,logCache[cindex].hrmtr-logCache[cindex].nHrs,previous/24,
 							logCache[nextCD].hrmtr-logCache[nextCD].nHrs,nextCache/24); }
 				}  
@@ -1509,14 +1525,16 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				//--cleanup--------------------:
 				if (timeSkipB<0){ timeSkipB = timeSkipB*-1; }
 				cindex=cindex*-1;  //--:reset
+				if (debug && lbuf) printf("Buffer of %ld hours\n", lbuf);
 			}
-			//*/--Nothing found in cache: match is after: (cindex==0)------------------------------: // */ 
+			/*/--After cache dates, Nothing found: (cindex==0)-----------------------------------: // */ 
 			else { timeSkipB=0;  nextCD=0; 
-				if (debug) {printf(">Nothing found in cache: logCache[ %d ] = %ld\n\n",cindex,cacheDate);} 
+				if (debug) { printf(">Nothing found in cache: logCache[ %d ] = %ld\n",cindex,cacheDate);
+					if (lbuf) printf("Buffer of %ld hours\n", lbuf); } 
 			}
-			//----Before: cindex>.xt & nextCD==0, After: cindex==0 & nextCD==0, Exact: nextCD can eq 0!----
 			//--Final Debug:---------------------:
-			if (debug && cdMarker && lbuf) printf("Buffer of %ld hours\n", lbuf);
+			//----Before: cindex>.xt & nextCD==0, 	--After: cindex==0 & nextCD==0, ----
+			//----Exact: nextCD can eq 0!, 			--Between: cindex<0 & nextCD ----
 		//**--return to jumplabel position:--------------------------------:
 		if (cdMarker==-1) { cdMarker=(sizeof(cdLabels)/sizeof(cdLabels[0]))-1;  }
 		goto *cdLabels[cdMarker]; //-jump back
@@ -1613,17 +1631,20 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 	if (debug>1) printf("\n>ReadLogs( %d )\n",tnum); //1st start most important! rest can be modified..
 	if (tnum>maxLogs) { leftovers = tnum%maxLogs;  //--:last bulk[].i      
 		 if (debug>2 && leftovers) printf(">...leftovers -- %d\n",leftovers); 
-		for (int uu=0; uu<tnum/maxLogs; uu++) { bulk[bi].start = start+((uu*maxLogs)*16);
+		bulk[0].start = start;
+		for (int uu=0; uu<tnum/maxLogs; uu++) { 
+			if (uu) { bulk[bi].start = bulk[bi-1].start+((1*maxLogs)*16); } //uu*
+			//--some logs read twice if readLogs start is reread after null-loop-around:
+			if (bulk[bi].start>0x8FFF) {bulk[bi].start=0x8000; lp=1;} 
 			if (lp && bulk[bi].start>=bulk[0].start) { if (debug>2){printf(">...last bulk[ %d ]...\n",bi);} 
 				bulk[bi].start=0; leftovers=0; break; }
 			bulk[bi].i=maxLogs;  
-			//--some logs read twice if readLogs start is reread after null-loop-around:
-			if (bulk[bi].start>0x8FFF) {bulk[bi].start=0x8000; lp=1;} 
+			
 			 if (debug>2) printf(">...bulk %d - %d - starting: 0x%04X\n",bi,bulk[bi].i,bulk[bi].start);  //-----debug
 			bi++; //-:increment 
 		} 
 		if (leftovers) { bulk[bi].i = leftovers;  bulk[bi].start=bulk[bi-1].start+(maxLogs*16);   
-			if (bulk[bi].start>0x8FFF) {bulk[bi].start=0x8000;}
+			if (bulk[bi].start>0x8FFF) {bulk[bi].start=0x8000;} //split????
 			 if (debug>2) printf(">...bulk %d (leftovers) - %d - starting:0x%04X\n",bi,leftovers,bulk[bi].start);  //-----debug
 			bi++; 
 		} //printf(">!.next bulk %d - bulk[%d] 0x%04X , bulk[%d]: 0x%04X\n",u,u-2,bulk[u-2].start,u-1,bulk[u-1].start);
@@ -1635,7 +1656,7 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 	//--One Bulk:-----------------------------------------------: 
 	else { 	bulk[0].start=start; bulk[0].i=tnum; remaining=1; } 
 	//--Done creating Bulk[]:
-	if (debug>2){ printf(">Total Log Reads  - %d\n",remaining); }  //exit(1);
+	if (debug && tnum>2){ printf(">Total Log Reads  - %d\n",remaining); }  //exit(1);
 	
 	
 	/* -----------------  Loop Bulk Reads -------------------------------------------------- 
@@ -1643,22 +1664,23 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 	short logx=0; 	//+'total' is redundant to logx
 	short bulkT=remaining; remaining=0; leftovers=1;//-:leftovers used to avoid looping cleared area twice
 	lp=0; //--:some logs read twice if readLogs start is reread after null-loop-around
+	uint bstart=bulk[0].start;
 	//--loop bulk[], filling in logs w/ datal:-----------------------------------------------: 
-	for (short b=0; b<bulkT; b++) { bi=0; if(debug>1)printf(">----Read [%d]\n",b); //-:sizeof(bulk)
-		if (!bulk[b].i) { continue; } //--empties 
+	for (short b=0; b<bulkT; b++) { bi=0; if(debug>1 && tnum>1)printf(">----Read [%d]\n",b); //-:sizeof(bulk)
+		if (!bulk[b].i) { continue; } //--empties  		||==65535
 		if (bulk[b].start > 0x8FFF) { bulk[b].start=0x8000; lp=1; } //end. goto beginning.
-		if (debug>2) printf(">.read..0x%04X:..%d.............\n",bulk[b].start,bulk[b].i);
-		if (lp && bulk[b].start>=bulk[0].start) { bulk[b].start=0; break; }
+		if (debug>1 && tnum>1) printf(">.read..0x%04X:......return %d.........%s\n",bulk[b].start,bulk[b].i,(lp?"lp":""));
+		if (lp && bulk[b].start>=bstart) { bulk[b].start=0; break; }
 		uint16_t datal [bulk[b].i*16]; 	short p=0;
 		
 		//--checking overflow:------------------------------------------------:
 		if (bulk[b].i>1) { remaining = (0x9000 - bulk[b].start)/16; 
 			//--split if end of logs.    //--
 			if (remaining < bulk[b].i) { readModbus(ctxx, bulk[b].start, remaining*16, datal);
-				if (debug>1) printf(">...bulk [%d] split - %d - 0x%04X\n",b,remaining,bulk[b].start);
+				if (debug>1 && tnum>1) printf(">...bulk [%d] split - %d - 0x%04X\n",b,remaining,bulk[b].start);
 				p = parseLogs(bulk[b].start,logx,logs, datal,remaining); 
 				bi+=p; total+=p; logx+=p; memset(&datal[0],'\0', sizeof(datal));
-				if (p<remaining && searching) { if (debug>1){printf("readLogs: ...last log...\n");} break; } //-:lastlog
+				if (p<remaining && searching) { if (debug>1){printf("readLogs: ..last log...\n");} break; } //-:lastlog
 				bulk[b].start=0x8000; bulk[b].i = bulk[b].i-remaining; lp=1;
 			}  remaining=0;
 		}	 //and split read of bulk[b]
@@ -1669,10 +1691,10 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 		p = parseLogs(bulk[b].start,logx,logs, datal,bulk[b].i); //start @ logx w/start, parse bulk[b].i logs..
 		
 		//--Search Return:----------------------------------------------------:
-		if (lp || (p<bulk[b].i && (searching || !leftovers))) { total+=p; 
+		if (p<bulk[b].i && (searching || !leftovers)) { total+=p; //-:!leftovers marks skipahead section
 				if (debug>1){printf("readLogs: ...last log...\n");} break; } //-:lastlog
 		//--SkipAhead... & fill rest of bulk[b] logs--------------------------:
-		else if (p<bulk[b].i){ bi+=p; total+=p; logx+=p; short px=logx; //-:start with logs[px]  
+		else if (p<bulk[b].i && leftovers){ bi+=p; total+=p; logx+=p; short px=logx; //-:start with logs[px]  
 			/*/--blank means logs hit cleared area:---------------- *///(size is b/t ~58 logs and ~2) 
 			leftovers=0; //-:-----Do NOT loop around to nulls again (if tnum is >logs)--------
 			if (debug){printf("readLogs %d: ...skipping forward...found %d\n",b,total);} 
@@ -1699,7 +1721,7 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 			} //-:exit while loop. 	
 			//--Start is at oldest log------------------------------:
 			if (remaining>(bulk[b].i-bi)) { remaining=(bulk[b].i-bi); lx=5; }
-			if (lp && start>=bulk[0].start) {break;}
+			if (lp && start>=bstart) {break;}
 			
 			readModbus(ctxx,start,remaining*16,datalm);
 			p=parseLogs(start,px,logs, datalm, remaining); 
@@ -1769,7 +1791,7 @@ static short parseLogs(uint start, short logx, LogObj *logs, uint16_t datal[], s
 	//printf("testing: %d: starting logs [%d] , total [%d]\n",tnum,logx,bnum);
 	 
 	for (short yi=0; yi<bnum; yi++){ //fill logs[] starting @ logx and datal[di] 
-			if (debug>1) printf(">Log: %d [%d]----------------------------------------------:\n",yi,logx);
+			if (debug>1 && bnum>1) printf(">Log: %d [%d]----------------------------------------------:\n",yi,logx);
 		//---Fill each logs[logx] with log[datal[*16]]:-----------------:
 		/* //--Loop and assign/parse values into structs, then into logs[]:---------------------:  */
 		//--Log struct: 
@@ -1804,7 +1826,7 @@ static short parseLogs(uint start, short logx, LogObj *logs, uint16_t datal[], s
 		//--Fill logs Metadata: -----------------------------------  logs[a].date,logs[a].date_s;
 		/* Hourmeter as date. ...real date after function: Dates Approximate */ 
 		logs[logx].date = (time_t) (log[1].value.lv)?log[1].value.lv:0; //--:hours ,time_t seconds*3600
-		if (debug>1) printf(">parseLOGs! 0x%04X hourmeter value: [ %ld ]:\n",log[0].hexa, logs[logx].log[1].value.lv);
+		if (debug>1 && bnum>1) printf(">parseLOGs! 0x%04X hourmeter value: [ %ld ]:\n",log[0].hexa, logs[logx].log[1].value.lv);
 		//--increment:
 		logx++; di+=16; ret++; 
 	} //-end multi parse loop
@@ -1911,9 +1933,9 @@ static const long writeLogCache(char dool) {
 		if (display && latestHr > (now-48)) { printf("Log Cache: current.\n\n");  }
 		//-logcache exists and is current. //-:with time preference
 	} 
-	else { //fclose(fpp); --read latest cache date, only write if gt 24 hours ago...
+	else { //fclose(fpp); --read latest cache date, only write if gt ~24 hours ago...
 		latestHr = readLogCache("lastLog"); //
-		if (latestHr && latestHr < (now-24)) { //--Write data to file: && latestHr != now
+		if (latestHr && latestHr < (now-21)) { //--Write data to file: && latestHr != now
 			snprintf(fpbuf,(size_t) 19,"%ld",now);
 			e = writeFile("logCache",c_time,fpbuf);   
 			if (e) { latestHr = now;	if (display) printf("Log Cache: updated.\n\n"); } 
@@ -2340,7 +2362,7 @@ static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[])
 			strcpy(str,strReplace(".000000,",".00,\t",str)); //++trim trailing 0's if all 0's!!
 			strcpy(str,strReplace("nan,","nan, \t",str)); 
 		} else {  snprintf(str,(size_t)16,"%hu,\t",tmp); } 
-		//--Print Profile Template: str==value
+		//--Print Profile Template: str==value   
 		fprintf(fp,"#0x%04X, %s \t[%s] %s\n", (int) eprom0[ii].hexa, str, eprom0[ii].unit, eprom0[ii].string); 
 	}
 	fflush(fp); setvbuf(fp, NULL, _IOFBF, 0);
@@ -2402,10 +2424,10 @@ const char* chkProfile(char doo, char* profileName) {
 			if (token) { trimP(token); result=strlen(token); }
 			else {result = 0; }  if (!result) { fprintf(stderr,">ERROR no value for register [0x%04X]\n",eeprom); 
 				continue; } //--skip if nothing, warn or error. 
-			//--Profile: Assign values:
+			//--Profile: Assign eeprom values:
 				profileIn[st].hexa = eeprom; 
-				strncpy(profileIn[st].sv, token, 16); //(...save value as string for now...)!!!!!
-					if (debug>3) printf("->[%s]\t", token); //
+				strncpy(profileIn[st].sv, token, 16); //-:save value (...as string for now...)!!!!!
+				if (debug>3) printf("->[%s]\t", token); //
 			//--//--THIRD 		------------------------------------------:
 			token = strtok(NULL, ",\n"); 
 			//--trim whitespace,etc... && ! isspace((unsigned int)token[0])
@@ -2468,7 +2490,10 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 		//--Voltage safety check?--  [18700==10.09]    //ranges: 10...30 or 0 (multiply by battery multiplier?)
 		} else if ( strcmp(eprom[ep].unit,"v")==0 //&& profileIn[pi].value.fv != 0	//--:min & max check   != 0xE01A
 				&& ((minV && profileIn[pi].value.fv < minV) || (maxV && profileIn[pi].value.fv > maxV)) ) { 
-			if (eprom[ep].hexa == 0xE01B && (maxV && profileIn[pi].value.fv < (maxV+1))) { skip=0; }//-:HVD, ... ???????!
+			//--Maxmax: HVD:  			,... 		???????!!!!!!!!!!!!!!!!!!hack!
+			if (eprom[ep].hexa == 0xE01B && (maxV && profileIn[pi].value.fv < (maxV+1))) { skip=0; }
+			//--:Allowable 0 voltages: -- Turning OFF==0 voltage.   ...or allow all to be zero?
+			else if (profileIn[pi].value.fv==0 && (eprom[ep].hexa==0xE001 || eprom[ep].hexa==0xE007 || eprom[ep].hexa==0xE010 || eprom[ep].hexa==0xE01D || eprom[ep].hexa==0xE033 || eprom[ep].hexa==0xE036)) {skip=0;} 
 			else { skip=1; 
 				fprintf(stderr," 0x%04X = [ %s ] !WARNING! new voltage is very low or very high\n"
 									"\t\t voltages must be between %.2f and %.2f ! [%f! == %hu]\n",
