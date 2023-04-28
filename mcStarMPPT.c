@@ -47,7 +47,7 @@ Notes:
 #define CUPDATEABLE 14 	/*  */
 #define UPDATEABLE 37 	/*  */
 #define MSMPPT    0x01	/* Fallback modbus address of the MPPT */ //---:[0xE034] */
-#define VERSION   1.00
+#define VERSION   1.01
 int MAX_CACHE_SIZE = 200000;		//-:max file size (bytes) before rebuilding
 
 /* //---------------------CONFIGURATION---------------------------------------//: */
@@ -467,8 +467,8 @@ int main(int argc, char *argv[]) {
 		else if (strcmp(argv[i], "eeprom")==0) { just_EEPROM = 1; display=0; } 
 		//--numeric exit errors:
 		else if (strcmp(argv[i], "-s")==0) {  sil = 1;  }
-		//--toggle display:						 Header vs. info display
-		else if (strcmp(argv[i], "-d")==0) { display=display?0:1; } //--needs to be a diff char!!!
+		//--toggle display: 			 Header vs. info display
+		else if (strcmp(argv[i], "-d")==0) { display=display?0:1; } //--needs to be unique char!!!
 		//--Logs:
 		else if (strcmp(argv[i], "logs")==0) {  action = "logs"; i++; if (!argv[i]) return -1;
 			//if (strcmp(argv[i],"cache")==0) { action = "debugc"; i++; mrk=5; break; } //mrk debug!!!!
@@ -1832,7 +1832,7 @@ static short parseLogs(uint start, short logx, LogObj *logs, uint16_t datal[], s
 		//--Fill logs Metadata: -----------------------------------  logs[a].date,logs[a].date_s;
 		/* Hourmeter as date. ...real date after function: Dates Approximate */ 
 		logs[logx].date = (time_t) (log[1].value.lv)?log[1].value.lv:0; //--:hours ,time_t seconds*3600
-		if (debug>1 && tnum>1) printf(">parseLOGs! 0x%04X hourmeter value: [ %ld ]:\n",log[0].hexa, logs[logx].log[1].value.lv);
+		if (debug>1 && bnum>1) printf(">parseLOGs! 0x%04X hourmeter value: [ %ld ]:\n",log[0].hexa, logs[logx].log[1].value.lv);
 		//--increment:
 		logx++; di+=16; ret++; 
 	} //-end multi parse loop
@@ -2432,7 +2432,7 @@ const char* chkProfile(char doo, char* profileName) {
 				continue; } //--skip if nothing, warn or error. 
 			//--Profile: Assign eeprom values:
 				profileIn[st].hexa = eeprom; 
-				strncpy(profileIn[st].sv, token, (size_t)16); //-:save value (...as string for now...)!!!!!
+				strncpy(profileIn[st].sv, token, 16); //-:save value (...as string for now...)!!!!!
 				if (debug>3) printf("->[%s]\t", token); //
 			//--//--THIRD 		------------------------------------------:
 			token = strtok(NULL, ",\n"); 
