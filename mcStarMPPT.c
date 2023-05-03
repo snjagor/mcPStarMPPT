@@ -75,7 +75,7 @@ static const char update_all_defaults=0; //-:enable builtin 'update all' cmd.. (
 /* Display note for your battery's voltages: Specific to battery make and type. (default is completely generic!)  */
 static char batteryVoltagesNote[255] = "Generic Battery Voltages:\n 100%:[12.7] volts, 90%:[12.6], 80%:[12.5], 70%:[12.3], 60%:[12.2], 50%:[12.1], 40%:[12.0], 30%:[11.9], 20%:[11.8], 10%:[11.7]";
 /*  Max / Min Voltages - All input voltages 12v in eeprom!  */
-static float maxV = 0; 	//:profile input safety check.. [default fallback=18v] (EQ||HVD==highest)
+static float maxV = 0; 	//:profile input safety check.. [default fallback=18] (EQ||HVD==highest)
 static float minV = 0;  //:profile input safety check.. [(>10.3 volts) , default fallback=11.5]
 /* Debug */ 
 //--0=print Display, 1=print RAM/EEPROM & display, 2=verbose debug, >=3=no writes, >3=+logCache & profiles debug...
