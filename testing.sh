@@ -27,7 +27,7 @@ echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo; #-
 cmd="$cmd0"; 
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo; #-
 
-cmd="$cmd0 -d debug"; 
+cmd="$cmd0 -d raw debug"; 
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 
 cmd="$cmd0 eeprom"; 

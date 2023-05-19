@@ -19,7 +19,7 @@
  	//--MaxLimit string lengths of global config settings:? (<128)? - fileOut , profileDir , (profile)
 	//----total char strln > 256: ... printOut(), jsonOut():jsontxt[655] is biggest.
  *
- *   	+cvs output not working!, !externalize configuration!, +wide char support, 
+ *   	+cvs output!, !externalize configuration!, +wide char support, 
  *  ++ Profiles: custom descriptions vs. translation, +only in profiles [debug for now] filter in chkProfile(), 
  * +------cmd arg: -d toggle display ,  late night normalization as option?? not for -s[ilent]
  *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
@@ -51,9 +51,9 @@ Notes:
 int MAX_CACHE_SIZE = 200000;		//-:max file size (bytes) before rebuilding
 
 /* //---------------------CONFIGURATION---------------------------------------//: */
-//static char externalize_config=0; //--:read configuration from file, use below as fallbacks? 
+//static char externalize_config=0; //--:read configuration from file and use below as fallbacks? 
 //--------------------------------------:   will create file on startup if none exists.
-unsigned char modbusId=0;  //:Default modbus address [0xE034] of the MPPT: 0==MSMPPT
+unsigned char modbusId=0;  //:modbus address of the MPPT [0xE034]: 0==Default (MSMPPT)
 char display=1; 
 static char date_format[64] = "%a %b %d %Y"; //--format for dates (w/o time)
 char json=0; char cvs=0; //---create json [or cvs] files
@@ -241,12 +241,12 @@ int main(int argc, char *argv[]) {
 		//---Temp Compensation & Max Voltages:------------:
 		{0,	0xE010,"v", 	"Ref.reg Max Charge Vout limit",0, .calc="f16"},	//MS disabled.(~15v) temp comp.	
 		{0, 0xE013,"A", "Charger max Amps limit",0, .calc="f16"}, /*/// */
-		{0,	0xE01A,"v", 	"temp comp. (12V lead-acid ~0.03 V/C)", 42926, .calc="f16"}, //(-0.02999)!standard!!	
+		{0,	0xE01A,"v", 	"temp comp. (12V lead-acid ~ -0.03 V/C)", 42926, .calc="f16"}, //(-0.02999)!standard!!	
 		{0, 0xE01B,"v",		"HVD",19520, .calc="f16"}, {0, 0xE01C,"v","HVR",19174, .calc="f16"},  //hvd 17.0v
 		{0, 0xE01D,"v","Abs. uncomp. Max Charge Vout limit", 0, .calc="f16"}, 	//MS disabled. compared to 0xE010
 		//--Charging Temperatures:-------------------:ram 0x002C, 0x002D: min -20C standard!  
 		//-cold charging: 10C(50F)? to 0C?! no charging below 0C!   //-max battery temp:  80==21760, 51deg C, 
-		{0, 0xE01E,"C","temp comp. clamp max",21120,.calc="f16"}, {0, 0xE01F,"C","temp comp. clamp min",65506,.calc="f16"},  
+		{0, 0xE01E,"C","max comp. temp clamp",21120,.calc="f16"}, {0, 0xE01F,"C","min comp. temp clamp",65506,.calc="f16"},  
 		{0, 0xE020,"C","ETb_lo_limit_100",0,.calc="f16"}, 	  {0, 0xE021,"C","low temp. limit_0 cutoff",0,.calc="f16"},
 		//!!!!Etb_lo_100: 10C? 0 to disable? 	 
 		/*/---Load Settings:--------------------------------: // */
@@ -1104,7 +1104,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		long search=0; uint start=0; //int logical; //Only start is needed!......
 		char strbuf [256]=""; char sbt=0; //:sbt==is logDate inbetween..
 		//--Log Cache scope variables:    [available from main:short xx,char skip_RAM,char mrk,] 
-		long earLog=0; xx=0; //:earliest log hrmtr
+		long earLog=0; //:earliest log hrmtr 
 		short nextCD=0; long timeSkipA=0; long timeSkipB=0;   
 		time_t cacheDate=0; int cindex=0; short cdMarker=0;   
 		time_t targetD=0; 
@@ -1237,6 +1237,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			if (logOpt==1){snprintf(sbuf,sizeof(sbuf),"\"logread\":\"start %d\",\"hrmeter\":%ld",start,now);}
 			else if (logOpt==2){snprintf(sbuf,sizeof(sbuf),"\"logread\":\"search day %hu\",\"hrmeter\":%ld",logn,now);}
 			else if (logOpt==3){snprintf(sbuf,sizeof(sbuf),"\"logread\":\"search hr %ld\",\"hrmeter\":%ld",search,now);}
+			else if (logOpt==4){snprintf(sbuf,sizeof(sbuf),"\"logread\":\"all\",\"hrmeter\":%ld",now);}
 			//-------js: json.logs[0].data[0].value; ~=> logs[0].meta.udate;
 			snprintf(bufs, sizeof(bufs), "{\"action\":\"logs\",%s,\"max\":%d,\"date\":\"%s\",\"udate\":%d,\"logs\":[", 
 															sbuf,totalLogs,escapeStr("json",ctime_s), (int)c_time); 
@@ -1387,7 +1388,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				printf(" (%.0f days ago)\t %s\n", daysago, (cindex && timeSkipB)?sbuf:""); 
 				//--iterate: 
 				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); } 
-				printf("----------------------------------\n\n"); 
+				printf("----------------------------------\n"); 
 			} else {
 				// * //--Formated:--------------------------------------------: * /
 				printf("################################## 0x%04X #####################################\n",logs[a].log[0].hexa);
@@ -1423,7 +1424,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		 	/*/--Before cache Dates:-------------------------------------------------: // */
 			if (cindex>logCache[0].xt) { if (debug) printf(">Target Date is before any log cache dates.\n"); 
 				//--Use oldest cache date for buffer:----------------------: {been here already?} 
-				xx=1; cindex--; //--:oldest log, change back before returning! 
+				cindex--; //--:oldest log, change back before returning! 
 				timeSkipB = (c_time-logCache[cindex].udate)/3600 - (now-logCache[cindex].hrmtr);
 				if (cdMarker==0||cdMarker==-1) { //init-ing search  && cindex>logCache[0].xt)
 					//--Diff b/t target date and cache dates: ¡¡targetD date is OLDEST possible!!
@@ -1930,7 +1931,7 @@ static const long writeLogCache(char dool) {
 	} else if (st == -1) {  fprintf(stderr,">ERROR with log cache file! [%s]\n\n",file_logCache);  }
 	else if (!dool) { //-:Init file above or return latest:
 		latestHr = readLogCache("lastLog"); e=2;  //fclose (fpp); -:Init file or return..
-		if (display && latestHr > (now-48)) { printf("Log Cache: current.\n\n");  }
+		if (display && latestHr > (now-48)) { printf("Log Cache: current..\n\n");  }
 		//-logcache exists and is current. //-:with time preference
 	} 
 	else { //fclose(fpp); --read latest cache date, only write if gt ~24 hours ago...
@@ -2686,7 +2687,7 @@ static char* escapeStr(const char* doo, char* string) {
 		nStr = strReplace("\\","",string);
 		nStr = strReplace(":","",nStr);
 		//if (strncmp(nStr,"/",1)==0) strReplace("/","",nStr);
-		nStr = strReplace(".","",nStr);  //replace w/regex
+		//nStr = strReplace(".","",nStr);  //replace w/regex
 		nStr = strReplace("/","",nStr); //replace w/regex
 	}
 	//--escape specifics: //--regex escape: ["\\] and other js specifics..!
