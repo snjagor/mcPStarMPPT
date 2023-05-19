@@ -19,7 +19,7 @@
  	//--MaxLimit string lengths of global config settings:? (<128)? - fileOut , profileDir , (profile)
 	//----total char strln > 256: ... printOut(), jsonOut():jsontxt[655] is biggest.
  *
- *   	+cvs output not working!, !externalize configuration!, +wide char support, 
+ *   	+cvs output!, !externalize configuration!, +wide char support, 
  *  ++ Profiles: custom descriptions vs. translation, +only in profiles [debug for now] filter in chkProfile(), 
  * +------cmd arg: -d toggle display ,  late night normalization as option?? not for -s[ilent]
  *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
@@ -53,7 +53,7 @@ int MAX_CACHE_SIZE = 200000;		//-:max file size (bytes) before rebuilding
 /* //---------------------CONFIGURATION---------------------------------------//: */
 //static char externalize_config=0; //--:read configuration from file and use below as fallbacks? 
 //--------------------------------------:   will create file on startup if none exists.
-unsigned char modbusId=0;  //:Default modbus address [0xE034] of the MPPT: 0==MSMPPT
+unsigned char modbusId=0;  //:modbus address of the MPPT [0xE034]: 0==Default (MSMPPT)
 char display=1; 
 static char date_format[64] = "%a %b %d %Y"; //--format for dates (w/o time)
 char json=0; char cvs=0; //---create json [or cvs] files
@@ -1393,7 +1393,8 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				if (cindex && timeSkipB){ snprintf(sbuf,sizeof(sbuf),"(date is within [%ld] hrs)",timeSkipB); }//-:buffer
 				printf(" (%.0f days ago)\t %s\n", daysago, (cindex && timeSkipB)?sbuf:""); 
 				//--iterate: 
-				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); }  
+				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); } 
+				printf("----------------------------------\n"); 
 			} else {
 				// * //--Formated:--------------------------------------------: * /
 				printf("################################## 0x%04X #####################################\n",logs[a].log[0].hexa);
