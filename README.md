@@ -5,14 +5,14 @@ mcPStarMPPT
 
 ## Requirements
 
-* [libmodbus](http://www.libmodbus.org) C library is needed to build from source. 
+* [libmodbus](https://libmodbus.org) C library is needed to build from source. 
 
 * A C compiler is needed to build from source. On Windows and OSX you might have to install
 developer tools. On Linux OSes `cc` should already be installed.
 
 * This program only works for [Morningstar ProStarMPPT](https://www.morningstarcorp.com/) 
 solar charge controllers. For Morningstar TriStarMPPT* charge controllers, see related 
-distribution <...> .
+[distribution](https://github.com/snjagor/mcTStarMPPT).
 
 * You will need an appropriate device for connecting to the modbus terminal on the 
 solar charger. (ie. Morningstar USB MeterBus Adapter)
@@ -117,8 +117,8 @@ mcPStarMPPT json
 mcPStarMPPT poll
 mcPStarMPPT json poll
 
+mcPStarMPPT debug -d	- just display ram and eeprom data
 mcPStarMPPT eeprom
-
 mcPStarMPPT raw eeprom
 
 mcPStarMPPT logs 2 days 2
@@ -139,7 +139,7 @@ mcPStarMPPT profile validate anewprofile
 
 mcPStarMPPT profile idle	- update charge controller with 'idle' profile values
 
-mcPStarMPPT update 		- (if default profile is enabled.)
+mcPStarMPPT update 		- (if a default profile is enabled.)
 ```
 
 ## License
@@ -152,7 +152,7 @@ Please see their [website](https://www.morningstarcorp.com/) for more info on th
 
 ## Contributing
 
-See git repo https://github.com/snjagor/mcPStarMPPT bug forum.. or clone and contribute.
+See git repos on [source code][github.com] or [codeberg][codeberg.org] bug forums.. or clone and contribute.
 If this program has been helpful please consider donating to the author at: [official website][]
 
 
@@ -165,4 +165,5 @@ Planned features for working on include:
 - [ ] optional [-s] silent mode for library-like returns
 
 [source code]: https://github.com/snjagor/mcPStarMPPT
+[codeberg]: https://codeberg.org/snjagor/mcPStarMPPT
 [official website]: https://www.centerflowing.com/#programs

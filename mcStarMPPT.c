@@ -437,7 +437,7 @@ int main(int argc, char *argv[]) {
 				skip_RAM=1; display=0; break; } //-uses: if (!modbus) builtin:current !!!!
 			else if (strcmp(argv[i], "backup")==0) { strcpy(profile,"print"); action="current_settings"; 
 				skip_RAM=1; display=0; break; } //-current eeprom  
-			else if (strcmp(argv[i], "validate")==0) { action="validate"; i++; 
+			else if (strcmp(argv[i], "validate")==0) { action="validate"; i++; mrk=5;
 				bufs[0]='\0'; strncpy(bufs, argv[i], sizeof(bufs));  //--Filter filename!
 				//profile = chkProfile('p',bufs); } //-first parse-----------:Read Profile 
 				strncpy(profile, chkProfile('p',bufs), sizeof(profile)); } 			//escapeStr("file",bufs)
@@ -833,8 +833,8 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	/* ############################--Update Log Cache--###############################-: */
 	//--Update/Write log cache:--------------------------------:
 	long latest=0;	struct tm *tmStruct;  tmStruct = localtime (&c_time);   
-	if (real_date_logs) {  //...avoid late night? prefer afternoon? && tmStruct->tm_hour < 24
-		if (tmStruct->tm_hour > 4){ 
+	if (real_date_logs) {  //...avoid late night? prefer afternoon?
+		if (tmStruct->tm_hour > 4 && tmStruct->tm_hour < 24){ 
 				latest = writeLogCache(1); }
 		else {  latest = writeLogCache(0); } //create if (!logcachefile)
 		if (latest && latest <= (now-48)) { latest = writeLogCache(1); } //--:update anyway
@@ -1113,7 +1113,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		
 		//--LogCache:-----------------------------:
 		//---logCache[0].xt == real number of cached dates! starting at 1.
-		if ( real_date_logs ) { long cht = readLogCache(""); 
+		if ( !lbuf_input && real_date_logs ) { long cht = readLogCache(""); 
 			earLog = logCache[logCache[0].xt].hrmtr-logCache[logCache[0].xt].nHrs-21; //--earliest log time w/buffer
 			if (debug) { printf(">Log cache, latest [ %ld ] readLogCache: [ %d ] \n\n", 
 										logCache[1].hrmtr-logCache[1].nHrs, (int)cht); }
@@ -1189,11 +1189,11 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		if (logn>200 || logOpt==3 || logOpt==4) {  //:find oldest log, and check hourmeter
 			long oldestLog = 0; uint startX = 0;  
 			//--get latest log:---------: 		//memory address=logs[a].log[0].hexa
-			searchLogs(ctx, start, (nNow-24), (short) 2, logs);
+			searchLogs(ctx, start, (nNow-24), 2, logs);
 			if (!logs[1].log[0].hexa) { startX = logs[0].log[0].hexa; } 
 			else { startX = logs[1].log[0].hexa; }
 			//--get oldest log:---------:		//latest wraps around to oldest.
-			readLogs(ctx,startX,(short)2,logs);
+			readLogs(ctx,startX, 2,logs);
 			if (logs[1].log[0].value.lv) { oldestLog=logs[1].log[0].value.lv;  } //-:oldest hrmtr
 			 if (debug) printf(">Oldest log hourmeter: %ld\n", oldestLog);
 			if (oldestLog) { 
@@ -1388,7 +1388,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				printf(" (%.0f days ago)\t %s\n", daysago, (cindex && timeSkipB)?sbuf:""); 
 				//--iterate: 
 				for (short x=0; x<16; x++) { printOUT (x, 'z', &logs[a].log[x]); } 
-				printf("----------------------------------\n"); 
+				printf("----------------------------------\n\n"); 
 			} else {
 				// * //--Formated:--------------------------------------------: * /
 				printf("################################## 0x%04X #####################################\n",logs[a].log[0].hexa);
@@ -2410,9 +2410,9 @@ const char* chkProfile(char doo, char* profileName) {
 				//--Convert hexadecimal string into number:-----------------------:
 				else { result=1; eeprom = strtol(token,NULL,16); } //--convert hexadecimal!!!!!!!!!!!!!!
 				//--check register key again:
-				if (eeprom > 57344 && eeprom < 57409) {        
+				if (eeprom >= 57344 && eeprom < 57408) {        
 						if (debug>3 && result) printf("\n0x%04X==[%d]  ", eeprom,eeprom); 
-				} else { fprintf(stderr,">ERROR with cvs file! [ %s ] is not valid register value!\n", token); exit(1); }
+				} else { fprintf(stderr,">ERROR with settings file! [ %s ] is not valid register value!\n", token); exit(1); }
 			//--//--FIRST token [Settings] check:--  :-------------------------------:
 			//...
 					
@@ -2569,9 +2569,9 @@ const RamObj parseValue (RamObj *inStruct, uint16_t dvalue) {
 		//--v,amps,C,etc.. *MOST!-----------------: Fudges non-F16 numbers!!!  //%hu - uint16_t
 		outStruct.value.fv = F16ConvertToF32(dvalue); 
 		if (dvalue == 65535 || !outStruct.value.fv) outStruct.value.fv = 0.0;  //--zero? nan??
-		//--Scaling modifications: (n*0.1)  ,  
+		/*/--Scaling modifications: (n*0.1)  ,  
 		if (strncmp(outStruct.calc,"comb=n*",7)==0) { //--//0x002A,B? no. !Not used for f16!?!
-				outStruct.value.fv = outStruct.value.fv * 0.1; }
+				outStruct.value.fv = outStruct.value.fv * 0.1; } // */
 	}
 	//-//-Cast-Ints:-(Raw)-------------------------------------------------:  
 	else if ( strcmp(inStruct->unit,days) == 0 || strcmp(inStruct->unit,secs) == 0 || strcmp(inStruct->unit,hours) == 0 || strcmp(inStruct->unit,mins) == 0 || outStruct.hexa == 0xE01E || outStruct.hexa == 0xE01F || outStruct.hexa == 0xE020 || outStruct.hexa == 0xE021) { //
@@ -2599,10 +2599,10 @@ const RamObj parseValue (RamObj *inStruct, uint16_t dvalue) {
 		strncpy(outStruct.value.sv, dvString, sizeof(outStruct.value.sv)); 
 	}  
 	//-//-Other floats & x numbers:
-	else {  
-		if (strncmp(outStruct.calc,"comb=n*",7)==0) { //--Ram is LO, EEPROM is HI   //not! 0xE04A & 0xE04B!?
+	else {  //--Ram is LO, EEPROM is HI   //not! 0xE04A & 0xE04B!?
+		if (strncmp(outStruct.calc,"comb=n*",7)==0 || strncmp(outStruct.calc,"n*",3)==0) { //TriStar has n*0.1 w/o combine
 			outStruct.value.fv = (inStruct->value.lv?inStruct->value.lv * 0.1:(int) dvalue * 0.1); outStruct.typ ='f'; } 
-		else {	outStruct.value.dv = (int) dvalue; outStruct.typ ='x';}
+		else {	outStruct.value.dv = (int) dvalue; outStruct.typ ='x'; }
 		
 	}
 	//--done:
@@ -2830,10 +2830,18 @@ void printOUT (int ind, char type, RamObj *inStruct) {
 			printf("%s 0x%04X [ %d %s %s ]  %s", (debug>1?bufValue:""), (int) inStruct->hexa, dvalue, 
 						inStruct->unit, inStruct->value.sv, inStruct->string);  //*%x better?
 	}	}
-	else { //---print out raw data----------: 	//
+	else { //---print out raw data----------: 	//types= "l", "f", "x"
 		//snprintf(bufValue, sizeof(bufValue), "%d", inStruct->basev);
+		if (raw) { snprintf(buf,sizeof(buf), "%d", dvalue); }
+		else if (type=='f') { snprintf(buf,sizeof(buf), "%f", inStruct->value.fv); }
+		else if (type=='l') { snprintf(buf,sizeof(buf), "%ld", (inStruct->value.lv? inStruct->value.lv:(long)dvalue)); }
+		else if (type=='x') { snprintf(buf,sizeof(buf), "%d", inStruct->value.dv); }
+		else { snprintf(buf,sizeof(buf), "%d", dvalue);  }
+		snprintf(bufValue, sizeof(bufValue), "rr%c%d:\t", type,ind);	//--:debug strcpy(bufType, "rr"); 
+		printf("%s 0x%04X [ %s %s ] %s", (debug>1?bufValue:""), (int) inStruct->hexa, buf, inStruct->unit, inStruct->string); 		
+		/*/old:
 		snprintf(bufValue, sizeof(bufValue), "rr%d:\t", ind);	//--:debug strcpy(bufType, "rr"); 
-		printf("%s 0x%04X [ %ld %s ] %s", (debug>1?bufValue:""), (int) inStruct->hexa, (inStruct->value.lv? inStruct->value.lv:(long)dvalue), inStruct->unit, inStruct->string); 
+		printf("%s 0x%04X [ %ld %s ] %s", (debug>1?bufValue:""), (int) inStruct->hexa, (inStruct->value.lv? inStruct->value.lv:(long)dvalue), inStruct->unit, inStruct->string); // */
 	}
 	//--end line:
 	if (update && updated) { printf(" (NEW)\n"); }
