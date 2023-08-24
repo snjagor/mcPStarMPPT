@@ -2433,7 +2433,7 @@ const char* chkProfile(char doo, char* profileName) {
 				continue; } //--skip if nothing, warn or error. 
 			//--Profile: Assign eeprom values:
 				profileIn[st].hexa = eeprom; 
-				strncpy(profileIn[st].sv, token, 16); //-:save value (...as string for now...)!!!!!
+				strncpy(profileIn[st].sv, token, (size_t)16); //-:save value (...as string for now...)!!!!!
 				if (debug>3) printf("->[%s]\t", token); //
 			//--//--THIRD 		------------------------------------------:
 			token = strtok(NULL, ",\n"); 
