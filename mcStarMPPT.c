@@ -225,6 +225,7 @@ int main(int argc, char *argv[]) {
 	//int eereserved[] = {0xE00B,0xE00C, 0xE00E,0xE00F, 0xE011,0xE012, 0xE014-19, 
 	//															(0xE020-21), 0xE028-2F, 0xE039-3F}; //--out of total
 	struct PaRam eprom [53] = {											//--Custom Defaults:
+		//--Charger Settings:
 		{0, 0xE000,"v",		"absorb v [full] @ 25C", 19290, .calc="f16"}, 	//(14.70v)****
 		{0,	0xE001,"v", 	"float v @ 25C", 19136, .calc="f16"},			//(13.50)	****13.50v** *0 to disable**
 		{0, 0xE002,"secs",	"absorb time", 10800},						//(3hrs)* 
@@ -504,10 +505,12 @@ int main(int argc, char *argv[]) {
 		}
 		//--utilities:
 		else if (strcmp(argv[i], "convert")==0) { i++;  float vf=0.0; uint16_t v16=0;
+			if (!argv[i]) { printf("\t convert [float value]   (...to F16)\n"
+				"\t convert f16 [F16 value] (...to float)\n\n"); }
 			//--F16 to Floats:
 			if (argv[i] && strcmp(argv[i], "f16")==0) { i++; if (!argv[i]) return -1; strncpy(bufs,argv[i],10); 
 				vf=atof(bufs); if (!vf || vf>65535 || vf < 0) { printf("null\n"); return -1; } //< -65535
-				v16 = (uint16_t) vf; vf = F16ConvertToF32(v16); 	printf(">Float: %f\n\n",vf); } //
+				v16 = (uint16_t) vf; vf = F16ConvertToF32(v16); 	printf(">Float of [%hu]: %f\n\n",v16,vf); } //
 			//--Float to F16: 
 			else { if (!argv[i]) return -1; strncpy(bufs,argv[i],10); 
 				vf=atof(bufs); if (!vf || vf>65535 || vf < -65535) { printf("null\n"); return -1;} //< 
@@ -654,14 +657,18 @@ static void *cdLabels[] = { &&cacheDParse0, &&cacheDParse1, &&cacheDParse2, &&ca
 //--debug logs block:
 if (strcmp(action,"debugc")==0) { // && debug > 2
 	/* --- Log Cache Debug ---------------------------------------- */
-	printf(">>OFFLINE DEBUGGING------------------\n");
+	printf(">>OFFLINE DEBUGGING--------------------------\n");
 	return 1;
 }	
+
+	num = sizeof(ram) / sizeof(ram[0]);
+	nume = sizeof(eprom) / sizeof(eprom[0]);
+
 
 	/*/###############################----PROFILES----##########################################-:   */
 	//--Updating Using builtin Defaults:--//--Build before backup Loop.. parse .f_defs into profileIn struct:  
 	//------------mrk == 1 (updates[]), == 8 update_all_defaults, == 5 (create profile)
-	if (mrk) { 	nume = sizeof(eprom) / sizeof(eprom[0]); int y=0; // --offline validate--
+	if (mrk) {   int y=0; // --offline validate--
 		for (int ii=0; ii < (int)nume; ii++) { if (eprom[ii].hexa > 0xE038) break;
 			//--:Create new profile: using builtin defaults... 
 			if (strcmp(profile,"new")==0) {  profileIn[y] = eprom[ii]; 
@@ -684,8 +691,6 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	}	} 
 	
 	print_out_profile: ;	//--label for creating profile with current Charger data: 
-	num = sizeof(ram) / sizeof(ram[0]);
-	nume = sizeof(eprom) / sizeof(eprom[0]);
 	
 	/*/--Profile template:--------------------------------------------------------:/*/
 	//---Create new profile, backup, or backup before updating w/profile:
@@ -1093,6 +1098,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	if (display) { if (!polling) printf("\n...ending.....Done.\n");
 		printf("\n________________________________________________________________________________\n\n\n\n");
 	}
+	else if (!sil) { printf("\n----------------\n\n"); }
 	return(0); //0?
 	
 
@@ -1137,7 +1143,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		/*/--------logOpts: 1==start, 2==days (date), 3==hrs ---------------------------------------:// */
 		tnum=tnum?tnum :3; //--minimum to get
 		//*/--Start addr: user or default start addr:---------------------------------:
-		if (logOpt==1) { start = (int) lint; 	snprintf(strbuf, (size_t) 16, "0x%04X", start);
+		if (logOpt==1) { start = (uint) lint; 	snprintf(strbuf, (size_t) 16, "0x%04X", start);
 			strncpy(strbuf, appendStr(3,"Reading logs from ",strbuf," ..."), sizeof(strbuf)/sizeof(strbuf[0])); }
 		else { start = 0x8000; } //logical = start+1; 
 		//*/--Days:-------------------------------------------------------------------:	
@@ -1189,11 +1195,11 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		if (logn>200 || logOpt==3 || logOpt==4) {  //:find oldest log, and check hourmeter
 			long oldestLog = 0; uint startX = 0;  
 			//--get latest log:---------: 		//memory address=logs[a].log[0].hexa
-			searchLogs(ctx, start, (nNow-24), 2, logs);
+			searchLogs(ctx, start, (nNow-24), (short) 2, logs);
 			if (!logs[1].log[0].hexa) { startX = logs[0].log[0].hexa; } 
 			else { startX = logs[1].log[0].hexa; }
 			//--get oldest log:---------:		//latest wraps around to oldest.
-			readLogs(ctx,startX, 2,logs);
+			readLogs(ctx,startX, (short)2,logs);
 			if (logs[1].log[0].value.lv) { oldestLog=logs[1].log[0].value.lv;  } //-:oldest hrmtr
 			 if (debug) printf(">Oldest log hourmeter: %ld\n", oldestLog);
 			if (oldestLog) { 
@@ -2388,7 +2394,7 @@ const char* chkProfile(char doo, char* profileName) {
 	if (fpp)  {
 		char str[128]=""; int tmp=0; int st=0;
 		//----Require and skip first cvs def line..  error if not present.
-		if( strncmp(fgets(str,127,fpp),cvsH,strlen(cvsH)-2)!=0 ) { fprintf(stderr,">ERROR with cvs file!\n"); exit(1);  }
+		if( strncmp(fgets(str,127,fpp),cvsH,strlen(cvsH)-2)!=0 ) { fprintf(stderr,">ERROR with settings file!\n"); exit(1);  }
 		//--Loop profile lines:----------------------------------------------------------:
 		do {
 			int result=0; int eeprom;
@@ -2404,13 +2410,13 @@ const char* chkProfile(char doo, char* profileName) {
 			if (token) trimP(token);
 			//--//--FIRST value [Profile] check -- EEPROM register PDU:----------------:
 				if (strncmp(token,"0xE",3)!=0 && strncmp(token,"57",2)!=0) { 
-						   fprintf(stderr,">ERROR with cvs file line %d! [ %s ] is not valid!\n", tmp,token); exit(1); }
+						   fprintf(stderr,">ERROR with settings file line %d! [ %s ] is not valid!\n", tmp,token); exit(1); }
 				//--Convert register address value:........ 	_minus one for (documented logical) rl_!
 				else if (strncmp(token,"57",2)==0) { result=1; eeprom = atoi(token); eeprom--; }
 				//--Convert hexadecimal string into number:-----------------------:
 				else { result=1; eeprom = strtol(token,NULL,16); } //--convert hexadecimal!!!!!!!!!!!!!!
 				//--check register key again:
-				if (eeprom >= 57344 && eeprom < 57408) {        
+				if (eeprom >= 57344 && eeprom < 57401) {  //<57408
 						if (debug>3 && result) printf("\n0x%04X==[%d]  ", eeprom,eeprom); 
 				} else { fprintf(stderr,">ERROR with settings file! [ %s ] is not valid register value!\n", token); exit(1); }
 			//--//--FIRST token [Settings] check:--  :-------------------------------:
@@ -2427,7 +2433,7 @@ const char* chkProfile(char doo, char* profileName) {
 				continue; } //--skip if nothing, warn or error. 
 			//--Profile: Assign eeprom values:
 				profileIn[st].hexa = eeprom; 
-				strncpy(profileIn[st].sv, token, 16); //-:save value (...as string for now...)!!!!!
+				strncpy(profileIn[st].sv, token, (size_t)16); //-:save value (...as string for now...)!!!!!
 				if (debug>3) printf("->[%s]\t", token); //
 			//--//--THIRD 		------------------------------------------:
 			token = strtok(NULL, ",\n"); 
@@ -2497,8 +2503,8 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 			else if (profileIn[pi].value.fv==0 && (eprom[ep].hexa==0xE001 || eprom[ep].hexa==0xE007 || eprom[ep].hexa==0xE010 || eprom[ep].hexa==0xE01D || eprom[ep].hexa==0xE033 || eprom[ep].hexa==0xE036)) {skip=0;} 
 			else { skip=1; 
 				fprintf(stderr," 0x%04X = [ %s ] !WARNING! new voltage is very low or very high\n"
-									"\t\t voltages must be between %.2f and %.2f ! [%f! == %hu]\n",
-						profileIn[pi].hexa,profileIn[pi].sv,minV,maxV, profileIn[pi].value.fv, profileIn[pi].basev); }
+									"\t\t voltages must be between %.2f and %.2f !\n", //  [%f! == %hu]
+						profileIn[pi].hexa,profileIn[pi].sv,minV,maxV); }//, profileIn[pi].value.fv, profileIn[pi].basev
 		//--Scaling/Ranges: celcius ()------------------------------------------:  //NULL is ok???
 		} else if ( strcmp(eprom[ep].unit,"C") == 0 && (profileIn[pi].value.fv < -128 || profileIn[pi].value.fv > 127) ) { 
 			skip=1; fprintf(stderr," 0x%04X = %s %s !WARNING! new temperature [ %f ] is not supported!\n", 
@@ -2593,6 +2599,9 @@ const RamObj parseValue (RamObj *inStruct, uint16_t dvalue) {
 			sscanf(inStruct->group, "state=0x%04X", &ok); //ram register type
 			//if (debug>1) printf(">parsing State! 0x%04X\n",ok);
 			strncpy(dvString, getStateString(ok, (inStruct->value.lv? inStruct->value.lv:(long) dvalue)),(size_t) 256); ok=0; }
+		/*/------software,hardware models,etc...:  
+		else if (inStruct->hexa == 0x000.) {  //:hex as string:
+			snprintf(dvString, 255, "0x%04X", dvalue);  } //outStruct.typ ='s'; */
 		else {	strncpy(dvString, getStateString(inStruct->hexa, 
 									(inStruct->value.lv?inStruct->value.lv:(long) dvalue)),(size_t) 256); }//
 		//--Assignment!
@@ -2600,7 +2609,7 @@ const RamObj parseValue (RamObj *inStruct, uint16_t dvalue) {
 	}  
 	//-//-Other floats & x numbers:
 	else {  //--Ram is LO, EEPROM is HI   //not! 0xE04A & 0xE04B!?
-		if (strncmp(outStruct.calc,"comb=n*",7)==0 || strncmp(outStruct.calc,"n*",3)==0) { //TriStar has n*0.1 w/o combine
+		if (strncmp(outStruct.calc,"comb=n*",7)==0 || strncmp(outStruct.calc,"n*",2)==0) { //TriStar has n*0.1 w/o combine
 			outStruct.value.fv = (inStruct->value.lv?inStruct->value.lv * 0.1:(int) dvalue * 0.1); outStruct.typ ='f'; } 
 		else {	outStruct.value.dv = (int) dvalue; outStruct.typ ='x'; }
 		
