@@ -47,7 +47,7 @@ Notes:
 #define CUPDATEABLE 14 	/*  */
 #define UPDATEABLE 37 	/*  */
 #define MSMPPT    0x01	/* Fallback modbus address of the MPPT */ //---:[0xE034] */
-#define VERSION   1.01
+#define VERSION   1.02
 int MAX_CACHE_SIZE = 200000;		//-:max file size (bytes) before rebuilding
 
 /* //---------------------CONFIGURATION---------------------------------------//: */
@@ -674,15 +674,15 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			if (strcmp(profile,"new")==0) {  profileIn[y] = eprom[ii]; 
 				profileIn[y].value.fv = eprom[ii].f_def; 
 				if (parseProfileValue("defaults", y, ii, eprom) < 0) continue; //just send eprom[ii]
-				eprom[ii].basev = eprom[ii].f_new; //--:copy new update value for createProfile() 
+				eprom[ii].basev = eprom[ii].f_new; //--:copy builtin value for createProfile() 
 				y++; continue; 
 			}
-			//--:Only if in updates[] otherwise skip:--- (arg: 'update' w/o default profile mrk=1)
+			//--:Only if in updates[] otherwise skip:--- (arg 'update' w/o default profile: mrk=1)
 			if (mrk==1) { int di=0; 
 				for (int *d = &updates[0]; d < &updates[UPDATEABLE]; d++){ if (*d==eprom[ii].hexa){di=1; break;} } 
 				if (!di) { continue; } 
 			} 
-			//--:'update all' arg? (mrk=8,profile=='-'){...all eprom values used...}
+			//--:'update all' (mrk=8,profile=='-'){...all eprom values used...}
 			//-//--Build Updates:------------------------------------------------:
 			profileIn[y] = eprom[ii]; 	
 			//--assign builtin defaults: f_def 		
@@ -697,7 +697,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	if (strcmp(action,"backupprofile")==0) { //|| mrk==5  //mrk: 8==revertAll, 1==revert to updates[], 5==new prof, 
 		//-:mrk==5? profile="new", offline(action="bkupp") OR online(action="current_settings"=>"bkupp")  
 		//-:backup cmd: (profile="print",action="current_settings"=>"bkupp")
-		//--Defaults or Current EEPROM:---------------------------: 
+		//--Defaults or Current EEPROM:---------------------------: if(mrk==5)...offline...
 		if (strcmp(profile,"new")==0) { display=1; createProfile("new", nume,eprom,ctime_s); return 0; } 
 		//--:Backup Settings:-------------------------------------://could be done in createProfile()..
 		else {  char raw2=raw;
@@ -1054,25 +1054,31 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				
 	fprintf(fp,"max battery volts:	%f v		Max Array:		%f v\n", 
 				ram[getIndex(0x0042,num,ram)].value.fv, ram[getIndex(0x004C,num,ram)].value.fv);
+	 minV = ram[getIndex(0x0049,num,ram)].value.dv; 		//! minV reuse.	
+	fprintf(fp,"Absorb time:		%.2f %s		Charge:			%f Ah\n", 
+				((minV>=3600)?secsToHours(minV):(minV/60)), ((minV>=3600)?"hrs":"mins"), ram[getIndex(0x0043,num,ram)].value.fv);
+	  minV = ram[getIndex(0x004B,num,ram)].value.dv; 		//! minV reuse.	
+	fprintf(fp,"Float time:		%.2f %s		EQ time:		%.2f mins\n", 
+				((minV>=3600)?secsToHours(minV):(minV/60)), ((minV>=3600)?"hrs":"mins"), (ram[getIndex(0x004A,num,ram)].value.dv/60.0));
 				
-	fprintf(fp,"Absorb time:		%.2f hrs		Charge:			%f Ah\n", 
-				secsToHours(ram[getIndex(0x0049,num,ram)].value.dv), ram[getIndex(0x0043,num,ram)].value.fv);
-				
-	fprintf(fp,"Float time:		%.2f mins		EQ time:		%.2f mins\n", 
-				(ram[getIndex(0x004B,num,ram)].value.dv/60.0), (ram[getIndex(0x004A,num,ram)].value.dv/60.0));
-				
-	fprintf(fp,"\n__Charger Targets________________________________________________________________\n\n");
+	//--multiply display voltages: ,
+	  maxV = ram[getIndex(0x0001,num,ram)].value.fv;  //! maxV reuse  -- voltage multiplier
+	  maxV = maxV>1?maxV:0;
+	fprintf(fp,"\n__Charger Targets________________________________________________________________%s\n\n",(maxV&&raw?"\n[ All Target Volatges multiplied by charger! ]":""));
 	fprintf(fp,"Absorb voltage: 	%f v		Max Charging volts:	%f v\n", 
-				eprom[0].value.fv, eprom[getIndex(0xE010,nume,eprom)].value.fv);
-	fprintf(fp,"Absorb time: 		%.1f hrs			Float voltage:		%f v\n", 
-				secsToHours(eprom[2].value.dv), eprom[1].value.fv);	//--#!!!
-	fprintf(fp,"Absorb time+: 		%.2f hrs		Float under exit:	%.1f mins\n", 
-				secsToHours(eprom[3].value.dv), (eprom[getIndex(0xE006,nume,eprom)].value.dv/60.0)); 	//--#!!!
+				((maxV&&!raw)?eprom[0].value.fv*maxV:eprom[0].value.fv), ((maxV&&!raw)?eprom[getIndex(0xE010,nume,eprom)].value.fv*maxV:eprom[getIndex(0xE010,nume,eprom)].value.fv));
+	//--calculate times, ...if (time<3600) mins:hrs  !!
+	 minV = eprom[2].value.dv; 	//! 0x0002 minV reuse.	
+	fprintf(fp,"Absorb time: 		%.2f %s		Float voltage:		%f v\n", 
+				((minV>=3600)?secsToHours(minV):(minV/60)), ((minV>=3600)?"hrs":"mins"), ((maxV&&!raw)?eprom[1].value.fv*maxV:eprom[1].value.fv));	//--#!!!
+	 minV = eprom[3].value.dv; 	//! minV reuse.	
+	fprintf(fp,"Absorb time+: 		%.2f %s		Float under exit:	%.1f mins\n", 
+				((minV>=3600)?secsToHours(minV):(minV/60)), ((minV>=3600)?"hrs":"mins"), (eprom[getIndex(0xE006,nume,eprom)].value.dv/60.0)); 	//--#!!!
 	fprintf(fp,"Absorb time+ trigger: 	%.3f v		Float skip:		%f v\n", 
-				eprom[4].value.fv, eprom[5].value.fv);
+				((maxV&&!raw)?eprom[4].value.fv*maxV:eprom[4].value.fv), ((maxV&&!raw)?eprom[5].value.fv*maxV:eprom[5].value.fv));
 	
 	fprintf(fp,"\n__Equalize______________________________________________________________________\n\n");
-	fprintf(fp,"EQ voltage: 		%f v		days:			%d days\n", eprom[7].value.fv, eprom[8].value.dv);
+	fprintf(fp,"EQ voltage: 		%f v		days:			%d days\n", ((maxV&&!raw)?eprom[7].value.fv*maxV:eprom[7].value.fv), eprom[8].value.dv);
 	fprintf(fp,"EQ timeout: 		%.2f hrs		days since last:	%d days\n", 
 				(eprom[getIndex(0xE00A,nume,eprom)].value.dv/3600.0), eprom[getIndex(0xE04F,nume,eprom)].value.dv);
 	fprintf(fp,"EQ under timeout:	%.2f hrs		F:			$ hu v\n", (eprom[getIndex(0xE009,nume,eprom)].value.dv/3600.0));
@@ -1099,7 +1105,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		printf("\n________________________________________________________________________________\n\n\n\n");
 	}
 	else if (!sil) { printf("\n----------------\n\n"); }
-	return(0); //0?
+	return(0); 
 	
 
 	/* ####################################--LOGS--#########################################-: */
@@ -2242,7 +2248,7 @@ void pollingOut(modbus_t *ctxx, int num, RamObj *ram0, char* string) {
 	ffp = stdout; 
 	
 	//---Polling Output:-------------------------------------:
-	fprintf(ffp,"\n						Charger State:	%s \n", ram0[getIndex(0x0021,num,ram0)].value.sv);
+	if (!display) fprintf(ffp,"\n						Charger State:	%s \n", ram0[getIndex(0x0021,num,ram0)].value.sv);
 	fprintf(ffp,"__Current Volts & Amps__________________________________________________________\n\n"); 
 	fprintf(ffp,"Battery:		%f v		Solar Array: 	%f v\n", ram0[getIndex(0x0017,num,ram0)].value.fv, ram0[getIndex(0x0013,num,ram0)].value.fv);
 	fprintf(ffp,"Battery Target V:	%f v		Solar Amps:	%f amps\n", ram0[getIndex(0x0024,num,ram0)].value.fv, ram0[getIndex(0x0011,num,ram0)].value.fv);
@@ -2336,8 +2342,9 @@ static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[])
 	
 	//--Open Output:-------------------------------------------:
 	if (doo[0] && debug<3) { 
-		//--File name: doo=="new" OR  profileBackups_ts ----: "current_settings" is global 
+		//--File name: doo=="new" OR  profileBackups_ts ----:  
 		if (strcmp(doo,"new")==0) {  foo=1; strncpy(bu,doo,(size_t)64); } //profile=="new" 
+		//else if (strcmp(doo,"offline")==0) { foo=2; strncpy(bu,"new",(size_t)64); } //profile from builtins 
 		else { 	snprintf(bu, (size_t)64, "%s_%ld", doo, c_time); } 		//profile==profileBackups_ts_
 		snprintf(file, sizeof(file), "%s", appendStr(4, profileDir, bu, profileTag, ".txt")); //fileOut, ??
 		//--Open file for writing: ...use: writeFile("doo", date, text); !!!!!!!!!!!!!?
@@ -2348,10 +2355,11 @@ static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[])
 
 	fprintf(fp,"Register,new value,description,\n"
 		"#--first line MUST be exactly as above! (last comma opt.)\n"
-		"//Ms ProStar MPPT Charger Settings:------------:\n");
+		"//Ms ProStar MPPT Charger Settings:------------:%s\n",(foo==1?"[profile]":(foo?"[debug]":"[backup]")));
 	if (foo==1) fprintf(fp,"#-Logical Addr must be as docs specify.\n"
+		"#-Voltages must All be 12v based, Charger multiplies by 1 or 2.\n"
 		"#---trailing zeros on voltages are optional.\n"
-		"#----descriptions are optional and [willbe appended?] ...\n"
+		"#----descriptions are optional ...\n"
 		"//line comments can start with either // or #\n"
 		"//--endofline comments must use #\n"
 		"#uncomment any lines to be updated...\n");
@@ -2369,8 +2377,8 @@ static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[])
 			strcpy(str,strReplace(".000000,",".00,\t",str)); //++trim trailing 0's if all 0's!!
 			strcpy(str,strReplace("nan,","nan, \t",str)); 
 		} else {  snprintf(str,(size_t)16,"%hu,\t",tmp); } 
-		//--Print Profile Template: str==value   
-		fprintf(fp,"#0x%04X, %s \t[%s] %s\n", (int) eprom0[ii].hexa, str, eprom0[ii].unit, eprom0[ii].string); 
+		//--Print Profile Template: str==value   . user profiles disabled, backup profiles enabled, by default.
+		fprintf(fp,"%s0x%04X, %s \t[%s] %s\n", ((foo==1)?"#":""), (int) eprom0[ii].hexa, str, eprom0[ii].unit, eprom0[ii].string); 
 	}
 	fflush(fp); setvbuf(fp, NULL, _IOFBF, 0);
 	if (foo<3){ fclose(fp); printf(">Created settings %s profile [ %s ].\n", (foo==1?"":"backup"),file); 

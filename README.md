@@ -10,6 +10,8 @@ mcPStarMPPT
 * A C compiler is needed to build from source. On Windows and OSX you might have to install
 developer tools. On Linux OSes `cc` should already be installed.
 
+* Bash and perl are needed for testing script. Unless you are testing on windows this wont be a problem.
+
 * This program only works for [Morningstar ProStarMPPT](https://www.morningstarcorp.com/) 
 solar charge controllers. For Morningstar TriStarMPPT* charge controllers, see related 
 [distribution](https://github.com/snjagor/mcTStarMPPT).
@@ -55,9 +57,10 @@ ie. `mcPStarMPPT_L16-array`, etc...
 
 Before changing any settings on your charger its a good idea to make backup settings files of 
 the various charger default modes. Use the arguments 'profile backup' to do so for each of the seven
-dip switch modes, and rename the backup files to correspond to the documented modes so you can 
-use them in the future. (Charger mode [8] for custom settings overwrites the charger's built in 
-defaults it seems.)
+programmed dip switch modes, and rename the backup files to correspond to the documented modes so you 
+can use them in the future. (Charger mode [8] for custom settings overwrites the charger's built in 
+defaults it seems.) (This is not required, only a suggestion. Atleast one backup should be made before 
+changing dip switches to custom mode so that common eeprom settings can be recorded.)
 
 *Please read all safety and documentation details for your battery system, or you risk damage to 
 yourself and/or the batteries.* This program has no way of knowing what values are correct beyond 
@@ -107,6 +110,7 @@ With no arguments the program will output current stats and settings for the con
 * default is converted decimal values
 * `raw` : output raw values from memory instead of human readable decimal (Float16, etc..)
 * `debug` : output additional debug data
+* `-d` : dont print stats display 
 
 
 ### Read Examples
@@ -121,7 +125,7 @@ mcPStarMPPT debug -d	- just display ram and eeprom data
 mcPStarMPPT eeprom
 mcPStarMPPT raw eeprom
 
-mcPStarMPPT logs 2 days 2
+mcPStarMPPT logs 3 days 2
 mcPStarMPPT json logs 2 days 1
 ```
 
@@ -135,7 +139,7 @@ mcPStarMPPT profile backup
 
 mcPStarMPPT profile create
 
-mcPStarMPPT profile validate anewprofile
+mcPStarMPPT profile validate anewprofile	- validate file anewprofile_profile.txt
 
 mcPStarMPPT profile idle	- update charge controller with 'idle' profile values
 
