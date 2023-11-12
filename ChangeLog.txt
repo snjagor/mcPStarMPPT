@@ -1,0 +1,19 @@
+1.02
+ - Display: daily absorb, float times can be hours or mins
+ - Display: voltages are multiplied for 24v, +small display changes
+ - Logs: prefer earlier logcache date as base
+ - Logs: increased normalization of logcache dates
+ - Logs: fixed possible skipping of logs at end of log block
+ - Profiles: backups are not commented out anymore
+ 
+1.01+hotfixes
+ - Fix: Absorb voltage was filtered out when reading profile
+ - Fix: json logs all output
+ - Fix: allowable zero voltages
+ - Logs: logCache rebuild if gt max size
+ - Profiles: inputs checked/filtered
+ - Profiles: can now validate when not connected to charger
+ - ...multiple small bug fixes
+
+1.0
+ - initial release

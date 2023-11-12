@@ -108,7 +108,7 @@ With no arguments the program will output current stats and settings for the con
 
 **Output options:**
 * default is converted decimal values
-* `raw` : output raw values from memory instead of human readable decimal (Float16, etc..)
+* `raw` : output raw values from memory (Float16, etc..) instead of human readable decimal
 * `debug` : output additional debug data
 * `-d` : dont print stats display 
 
@@ -145,6 +145,14 @@ mcPStarMPPT profile idle	- update charge controller with 'idle' profile values
 
 mcPStarMPPT update 		- (if a default profile is enabled.)
 ```
+
+## Known Bugs
+
+### LogCache
+
+For exactness, manually added logcache dates should be in sync with their related hourmeters so that they reflect similar times. Otherwise unexpected time gaps can be introduced when dating logs. If the manually added date is for a particular log, then use the log's hourmeter and create a timestamp for the evening of the desired day. Another way is to take a previous or later logcache time and add/subtract the same amount of time to/from the hourmeter and timestamp to get new ones. (ie. -40hrs to later hourmeter & -144000 seconds to later timestamp) Remember all manually added lines MUST be inserted in numerical hourmeter order to be recognized.
+
+When the solar charger is turned on after a period of being off the logcache may tag the charger's hourmeter to the wrong date, which will confuse getting the correct date when reading logs. The easiest fix is to manually change the timestamp date in the logcache file for that hourmeter to last day of previous charger use, or if unknown, delete the the wrong logcache line (last one) after about 12 hrs of being back on (this will enable a new correct logcache date to be written).
 
 ## License
 
