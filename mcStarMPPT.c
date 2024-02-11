@@ -19,9 +19,9 @@
  	//--MaxLimit string lengths of global config settings:? (<128)? - fileOut , profileDir , (profile)
 	//----total char strln > 256: ... printOut(), jsonOut():jsontxt[655] is biggest.
  *
- *   	+cvs output!, !externalize configuration!, +wide char support, 
+ *   	+cvs output!, !externalize configuration!, +wide char support, (MS:65535==emptyNull , 65506==offNull) 
  *  ++ Profiles: custom descriptions vs. translation, +only in profiles [debug for now] filter in chkProfile(), 
- * +------cmd arg: -d toggle display ,  late night normalization as option?? not for -s[ilent]
+ *  ++: -s[ilent] , Days-since-EQ not working , locked_registers[] ,
  *	ToDo:	default defaults, static to functions, printOut()?, chkProfile() parsing combine for settings,
 			 HVD checking and set value to 0 in parseProfileValue(), escapeStr("file",), 
  
@@ -29,7 +29,8 @@
 Notes:
 	* voltages in profiles & structs are set for 12v. 24v & higher systems are auto-multiplied by charger!
 	* "use lower EQ V for new batteries" 
-	* Temp Compensation shifts voltages upwards [when cold].
+	* Temp Compensation shifts voltages upwards [when cold] (lead/acid: 0C -> +0.75v)
+	* ...be aware of max allowable battery voltage and set cutoffs appropriately.
  */
 
 #include <stdio.h>  
@@ -48,15 +49,16 @@ Notes:
 #define UPDATEABLE 37 	/*  */
 #define MSMPPT    0x01	/* Fallback modbus address of the MPPT */ //---:[0xE034] */
 #define VERSION   1.02
-int MAX_CACHE_SIZE = 200000;		//-:max file size (bytes) before rebuilding
 
 /* //---------------------CONFIGURATION---------------------------------------//: */
-//static char externalize_config=0; //--:read configuration from file and use below as fallbacks? 
+#define MAX_CACHE_SIZE 200000		//-:max file size (bytes) before rebuilding
+#define MIN_V     10.3				//-:absolute minimum voltage allowed in profiles
+//static char externalize_config=0; //--:1==read configuration from file (config.txt) and use below as fallbacks
 //--------------------------------------:   will create file on startup if none exists.
 unsigned char modbusId=0;  //:modbus address of the MPPT [0xE034]: 0==Default (MSMPPT)
 char display=1; 
 static char date_format[64] = "%a %b %d %Y"; //--format for dates (w/o time)
-char json=0; char cvs=0; //---create json [or cvs] files
+char json=0; char cvs=0; 					//---create json [or cvs] files
 static const char* fileOut = "PStarMPPT_"; 	//--output files. (json,logs,cvs,etc.) 
 static const char* outDir = ""; 			//--default output directory. [last slash required...] 
 /* Charger Updates & Backups *///-filenames:[profileDir+profile+profileTag+".txt"]
@@ -69,14 +71,15 @@ static const char real_date_logs=1;  //-:enable small external cache for [rl] da
 static char log_cache[32] = "logCache";  //-:file prefix
 //--Date format in log cache:-------------------------can be: m-d-yyyy , d-m-yyyy , yyyy-d-m
 static const char log_cache_month_position = 1;  //--:Month is: 1=first, 2=second, 3=third
-/* Locked EEPROM values for security or safety reasons */
-static int locked_registers[UPDATEABLE] = {0xE034,0xE035,0xE01A}; //modbus,meterbus,temp comp.
-static const char update_all_defaults=0; //-:enable builtin 'update all' cmd.. (security & safety risk!)
 /* Display note for your battery's voltages: Specific to battery make and type. (default is completely generic!)  */
 static char batteryVoltagesNote[255] = "Generic Battery Voltages:\n 100%:[12.7] volts, 90%:[12.6], 80%:[12.5], 70%:[12.3], 60%:[12.2], 50%:[12.1], 40%:[12.0], 30%:[11.9], 20%:[11.8], 10%:[11.7]";
-/*  Max / Min Voltages - All input voltages 12v in eeprom!  */
+/*  Max / Min Profile Voltages - All input voltages 12v in eeprom!  */
 static float maxV = 0; 	//:profile input safety check.. [default fallback=18] (EQ||HVD==highest)
-static float minV = 0;  //:profile input safety check.. [(>10.3 volts) , default fallback=11.5]
+static float minV = 0;  //:profile input safety check.. [(>MIN_V volts) , default fallback=11.2]
+
+/* Locked EEPROM values for security or safety reasons */
+static int locked_registers[UPDATEABLE] = {}; //temp comp.,load ohms comp.,modbus,meterbus:   0xE01A,0xE026,0xE034,0xE035
+static const char update_all_defaults=0; 	//-:enable builtin 'update all' cmd.. (security & safety risk!)
 /* Debug */ 
 //--0=print Display, 1=print RAM/EEPROM & display, 2=verbose debug, >=3=no writes, >3=+logCache & profiles debug...
 char debug = 0; 
@@ -89,13 +92,13 @@ static int coil_updates[CUPDATEABLE] = { 0x0016 }; //-:cmd arg "resetC" triggers
 //--NonArg choices---------:   
 // load disconnect:0x0001, charge disconnect:0x002
 // eeprom update: 0x0016, lighting test:0x0020, factory reset: 0x00FE
-//---EQ note: 0x0013 (:hack making EQ coil 0x0000 findable)
+//---note: EQ==0x0013 (:hack making EQ coil 0x0000 findable)
  
 /*/------------------------------------------------:
  * --EEPROM UPDATES--------------------------------: 
  * ------------------------------------------------:  
  */
-//--:updates[] built-in here only used with cmd 'update':
+//--:built-in updates[] here only used with cmd 'update':
 //---:leave empty to disable (a possible safety risk if battery types change)
 static int updates[UPDATEABLE] = 
 		{ }; 
@@ -133,7 +136,7 @@ static char file_logs[128] = ""; static char file_logCache[128] = "";
 
 /* //---------------------GLOBAL RAM STRUCTURES----------------------------//: */
 //----union to hold registers parsed value:
-union Value { float fv; signed int dv; char sv[255]; long lv;   }; 
+union Value { float fv; signed int dv; char sv[255]; signed long lv;   }; 
 typedef union Value uValue;
 //---Data structures:---------------------------------------------://
 struct PaRam { uint logical; uint hexa; char unit[9]; char string[255]; //--
@@ -147,7 +150,7 @@ struct bulkData { uint start; ushort i; };
 struct logStruct { time_t date; RamObj log[16]; char date_s[128]; }; //--
 typedef struct logStruct LogObj;
 //--log cache input: !!!!? unsigned long hrmtr ?????
-struct logCacheStruct { long hrmtr; time_t udate; char date_s[128]; char line[256]; char nHrs; int xt; }; //--
+struct logCacheStruct { long hrmtr; time_t udate; char date_s[128]; char line[256]; signed char nHrs; int xt; }; //--
 //typedef struct logCacheStruct LogCacheObj;
 static struct logCacheStruct logCache [256]; //+1, logCache[0] is metadata
 //--Coils:
@@ -187,8 +190,8 @@ static long combine(int hex, uint16_t lo, short num, RamObj *ramIn);
 const char* getStateString(int hex, long dvalue);
 uint16_t dipsChargeMode(uint16_t dvalue); 
 //--get register/coil indexes:---------:
-int getIndex(int hex, size_t total, RamObj *inStruct);
-int getCoil(int hex, size_t total, struct CoilsObj *inStruct);
+short getIndex(int hex, size_t total, RamObj *inStruct);  
+short getCoil(int hex, size_t total, struct CoilsObj *inStruct);
 //--Utils:----------------------:
 static const char* appendStr(int num, ...); //-:numbers need to be stringified before passing!
 const float secsToHours(int num); //float
@@ -209,7 +212,7 @@ void pollingOut(modbus_t *ctxx, int count, RamObj *ram0, char* string);
 
 int main(int argc, char *argv[]) {
 	size_t num, nume; char* action = ""; char skip_RAM = 0; char mrk=0; char logOpt=0; //char action[] = "";
-	short logn=0; short tnum=0; long lint=0; long lbuf=0; //: logs...lint long OR unsigned long?
+	short logn=0; signed short tnum=0; long lint=0; long lbuf=0; //: logs...lint long OR unsigned long?
 	//char config_file[128]=""; //-:external config file:
 	//strncpy(config_file,appendStr(3, outDir, fileOut, "_config.txt"),(size_t)128);
 	//--BUFFERs----------------------:
@@ -228,33 +231,35 @@ int main(int argc, char *argv[]) {
 	struct PaRam eprom [53] = {											//--Custom Defaults:
 		//--Charger Settings:
 		{0, 0xE000,"v",		"absorb v [full] @ 25C", 19290, .calc="f16"}, 	//(14.70v)****
-		{0,	0xE001,"v", 	"float v @ 25C", 19136, .calc="f16"},			//(13.50)	****13.50v** *0 to disable**
+		{0,	0xE001,"v", 	"float v @ 25C", 19136, .calc="f16"},			//0=disabled   (13.50)
 		{0, 0xE002,"secs",	"absorb time", 10800},						//(3hrs)* 
 		{0, 0xE003,"secs",	"low bat. extra absorb time",14400}, 		//(4hr)*longer absorb
 		{0, 0xE004,"v", 	"trigger extra absorb",18996, .calc="f16"}, //(12.40)* (75%standard)
 		{0,	0xE005,"v", 	"skip float",18983, .calc="f16"},    		//(12.30)* lowvoltage=absorbAllDay
 		{0,	0xE006,"secs", 	"exit float if time below v",1800}, 		//(30mins)
-		//---EQ: corrective=3-4hrs 60~180 days, maintenance=1-2hrs every 30,60,90 days 
-		{0,	0xE007,"v", 	"EQ voltage @ 25C",19367, .calc="f16"}, 	//(15.30) *****(lower for newer)
-		{0,	0xE008,"days", 	"days b/t EQ",28},							//Big or small (bi monthly?) EQ
+		//---EQ: -----corrective=3-4hrs 60~180 days, maintenance=1-2hrs every 15,30,60,90 days----------- 
+		{0,	0xE007,"v", 	"EQ voltage @ 25C",19367, .calc="f16"}, 	//0=disabled (15.30) *****(lower for newer)
+		{0,	0xE008,"days", 	"days b/t EQ",28},							//EQ
 		{0, 0xE009,"secs",	"EQ time-out limit @ > bulk, < EQv",14400},	//(4hr)
 		{0,	0xE00A,"secs", 	"EQ time limit: @ EQv",7200}, 				//(2hr[7200],3hr[10800])  			
-		{0, 0xE00D,"x", 	"Alarm on changes",0}, /*/// */
+		{0, 0xE00D,"x", 	"Alarm on changes",0}, /* 1==alarm , 0||0xFFFF==fault /// */
 		//---Temp Compensation & Max Voltages:------------:
-		{0,	0xE010,"v", 	"Ref.reg Max Charge Vout limit",0, .calc="f16"},	//MS disabled.(~15v) temp comp.	
-		{0, 0xE013,"A", "Charger max Amps limit",0, .calc="f16"}, /*/// */
-		{0,	0xE01A,"v", 	"temp comp. (12V lead-acid ~ -0.03 V/C)", 42926, .calc="f16"}, //(-0.02999)!standard!!	
-		{0, 0xE01B,"v",		"HVD",19520, .calc="f16"}, {0, 0xE01C,"v","HVR",19174, .calc="f16"},  //hvd 17.0v
-		{0, 0xE01D,"v","Abs. uncomp. Max Charge Vout limit", 0, .calc="f16"}, 	//MS disabled. compared to 0xE010
-		//--Charging Temperatures:-------------------:ram 0x002C, 0x002D: min -20C standard!  
-		//-cold charging: 10C(50F)? to 0C?! no charging below 0C!   //-max battery temp:  80==21760, 51deg C, 
-		{0, 0xE01E,"C","max comp. temp clamp",21120,.calc="f16"}, {0, 0xE01F,"C","min comp. temp clamp",65506,.calc="f16"},  
-		{0, 0xE020,"C","ETb_lo_limit_100",0,.calc="f16"}, 	  {0, 0xE021,"C","low temp. limit_0 cutoff",0,.calc="f16"},
-		//!!!!Etb_lo_100: 10C? 0 to disable? 	 
+		{0,	0xE010,"v", 	"Ref.reg Max Charge Vout limit",0, .calc="f16"},	//MS 0=disabled. (temp comp.)	~15v
+		{0, 0xE013,"A", 	"Charger max Amps limit",0, .calc="f16"}, /*/// */	//...
+		{0,	0xE01A,"v", 	"temp comp. (12V lead-acid ~ -0.03 V/C)", 42926, .calc="f16"}, //(-0.02999)!standard!! (0C==+0.75v)
+		{0, 0xE01B,"v",		"HVD",19520, .calc="f16"}, {0, 0xE01C,"v","HVR",19174, .calc="f16"},  //hvd 0=disabled (17.0v)
+		{0, 0xE01D,"v","Abs. uncomp. Max Charge Vout limit", 0, .calc="f16"}, 	//MS 0=disabled. compared to 0xE010
+		/*/--Charging Temperatures:-------------------:lower temps==higher voltages (0xE01A) cutoff before >max V! */
+		//---------------------					(max battery temp: 52degC==21120)
+		{0, 0xE01E,"C","max comp. temp clamp",21120,.calc="f16"}, {0, 0xE01F,"C","min comp. temp clamp",65506,.calc="f16"}, 
+		//-cold charging: 10C(50F) to 0C? no charging below 0C?    (discharging < 0C risks freezing electrolyte)   
+		//-----------ram: 0x002C=low limit OK goto 100% , 		0x002D=low limit cutoff: 0% charge  (-20C standard min.)  
+		{0, 0xE020,"C","ETb_lo_limit_100",18688,.calc="f16"}, 	  {0, 0xE021,"C","low temp. limit_0 cutoff",0,.calc="f16"},
+		//! 0xE020 ETb_lo_limit_100: "must be > ETb_lo_limit_0 to operate"	
 		/*/---Load Settings:--------------------------------: // */
-		 // +{0xE022..0xE027,  "Load Settings"}  //LVD(11.5v,11.398v), LVDR(12.7v,12.60)
+		 // +{0xE022..0xE027,  "Load Settings"}  //LVD(11.5v), LVDR(12.7v)
 		 {0, 0xE022,"v","LVD",18880, .calc="f16"},		{0, 0xE023,"v","LVR",19034, .calc="f16"},
- 		 {0, 0xE024,"v","Load HVD", .calc="f16"}, 	{0, 0xE025,"v","Load HVR", .calc="f16"}, //0, 14.5v
+ 		 {0, 0xE024,"v","Load HVD (OFF=0)", .calc="f16"}, 	{0, 0xE025,"v","Load HVR",19264, .calc="f16"}, //0, 14.5v
 		 {0, 0xE026,"x","LVD Load current comp. (ohms)",9134, .calc="f16"}, //.014999 ohms !standard!!
 		 {0, 0xE027,"mins","LVD warning timeout",4},	  
 		
@@ -265,7 +270,8 @@ int main(int argc, char *argv[]) {
 		{0, 0xE033, "v",	"LED Charging Y/R->R ",0, .calc="f16"},				//--(0,12.14) 		standard:58%
 		/*/---MultiCharger settings:------------------------: // */
 		 {0,0xE034, "x", "Modbus net ids",1},  {0,0xE035, "x", "Meterbus net ids",1},  
-		 {0,0xE036, "v", "Fixed Vmp",0, .calc="f16"}, {0,0xE037,"x","Vmp fraction of Voc",0, .calc="f16"}, //fraction=(0 to 0.99)
+		 {0,0xE036, "v", "Fixed Vmp",0, .calc="f16"}, //0=disabled (copied to 0x003F on startup)
+		 {0,0xE037,"x","Vmp fraction of Voc",0, .calc="f16"}, //0=disabled fraction=(0 to 0.99) (copied to 0x003F on startup)
 		 {0,0xE038, "A", "Charge current limit", .calc="f16"}, 
 		
 		//---Read only totals:------------------------------:  , .group="LO/HI",
@@ -335,7 +341,7 @@ int main(int argc, char *argv[]) {
 		{74,0x0049,"secs","Absorb time (day)"}, 		{75,0x004A,"secs","EQ time (day)"}, 
 		{76,0x004B,"secs","Float time (day)"}, 			{77,0x004C,"v","maxArray (day)",.calc="f16"},
 		//---Misc-----------------------------------------:
-		{78,0x004D,"-","Charge Status LED"},    {79,0x004E,"hours","Lighting Mode on (non0)/off (0)",65535}, // !!
+		{78,0x004D,"-","Charge Status LED"},    {79,0x004E,"hours","Lighting Mode on (non0)/off (0)",65535}, // !!!!! ???
 		{80,0x004F,"v","Fixed Vmp (overrides 0x0050)",0,.calc="f16"},{81,0x0050,"x","Vmp fraction of Voc",0,.calc="f16"},
 		{82,0x0051,"x","Alarm or Fault on changes"}
 	};
@@ -360,7 +366,7 @@ int main(int argc, char *argv[]) {
 				"\t -d (toggle info display), -s (silent)\n"
 				"\t debugn (to stdout), raw (output raw float16 values)\n\n"  //, 
 			"Control Options:\n\t reboot,   EQ [ON | OFF],\n"
-				"\t reset_charge (kwh & Ah resetables), reset_totals,\n\t reset_all (all resetables), resetC (custom)\n\n"
+				"\t reset_charge (kwh & Ah resettables), reset_totals,\n\t reset_all (all resettables), resetC (custom)\n\n"
 			"Update Options:\n\t update  : (uses default profile if set), \n"
 				"\t profile [nameof | validate nameof | create | backup]\n"
 				"\t\t profile create - will use built-in defaults if offline, otherwise live values\n"
@@ -465,7 +471,7 @@ int main(int argc, char *argv[]) {
 		//--debug 2: mostly extra debug info for logs.. , 'update' cmd: use builtin defaults!
 		//--display/show raw values. w/:debug: <..2==write files , 3==stdout , 
 		else if (strcmp(argv[i], "raw")==0) { raw = 1; } 
-		else if (strcmp(argv[i], "eeprom")==0) { just_EEPROM = 1; display=0; } 
+		else if (strcmp(argv[i], "eeprom")==0) { just_EEPROM = 1; } //display=0; 
 		//--numeric exit errors:
 		else if (strcmp(argv[i], "-s")==0) {  sil = 1;  }
 		//--toggle display: 			 Header vs. info display
@@ -522,11 +528,12 @@ int main(int argc, char *argv[]) {
 		else if (strcmp(argv[i], "-v")==0) { printf("%s \n\n--- ProStarMPPT* Opensource Charge Control Software ---\n"
 			"-----------------------------------------------------------\n"
 			" release version %.2f\n-----------------------------------------------------------\n"
+			"Compiled fallbacks:\n\t Max profile voltage = 18v\n\t Min profile voltage = %.1fv (fallback=11.2v)\n"
 			"*ProStarMPPT® is registered trademark to Morningstar Corp.\n"
 			"*( www.morningstarcorp.com )\n\n"
 			"____*_*_* OpenSource Artistic-2.0 license © 2023 by sunja - centerflowing.com *_*_*____\n\n",
 			//"(may also be copied under terms of GNU General Public License GNUv.2+ or later)\n\n"
-			argv[0], VERSION); return 0; }
+			argv[0], VERSION, MIN_V); return 0; }
 		//--Error:
 		else { printf(">Error with args\n\n"); exit(1); }
 		//--next arg:
@@ -543,8 +550,8 @@ int main(int argc, char *argv[]) {
 	//if (externalize_config && chkProfile('s',config_file)) { configureG(); } //:update globals...
 	///////////////////////////////////////////////
 	//--Default Max/Min: (...divide by vmultiplier if accepting>12v inputs.)
-	maxV=maxV>18?18.0:(maxV<12?18:maxV); 		//--max acceptable v. safety check
-	minV=minV>13?11.5:(minV<10.3?11.5:minV); 		//--min acceptable v. safety check (lithium can be low?)
+	maxV=maxV>18?18.0:(maxV<12?18:maxV); 			//--max acceptable v. safety check
+	minV=minV>12.5?11.2:(minV<MIN_V?11.2:minV); 	//--min acceptable v. safety check (lithium can be low?)
 	
 	/*/--Date / Time:---------------------------------------------------------------------------------:*/
 	//----Add time to date:
@@ -716,7 +723,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			//--:Create new profile: using builtin defaults... 
 			if (strcmp(profile,"new")==0) {  profileIn[y] = eprom[ii]; 
 				profileIn[y].value.fv = eprom[ii].f_def; 
-				if (parseProfileValue("defaults", y, ii, eprom) < 0) continue; //just send eprom[ii]
+				if (parseProfileValue("defaults", y, ii, eprom) < 0) continue; //just send eprom[ii] ([y].sv==null)
 				eprom[ii].basev = eprom[ii].f_new; //--:copy builtin value for createProfile() 
 				y++; continue; 
 			}
@@ -769,6 +776,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			if (mode!=8) { warn=1; 
 				printf("!WARNING! Charge Mode %hu will be overwritten! Charger not in custom settings mode.\n\n",mode); }
 		}
+		
 		//--Build Update using profile:		
 		//----chkProfile() opens and preparses data into profileIn[]. 
 		if (display) printf(">Profile [ %s ] updates found for EEPROM:\n\n",profile); //--redundant if?
@@ -786,12 +794,14 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			} //end locked
 			
 			//--Match profile update to supported eprom[] registers:  
-			signed short ey = getIndex(profileIn[i].hexa,nume,eprom); 
-			if (ey == -1){ fprintf(stderr,"\n***Unsupported: 0x%04X [%d] *skipping!*\n",profileIn[i].hexa,profileIn[i].hexa+1);
-				continue; }
+			short ey = getIndex(profileIn[i].hexa,nume,eprom); 
 			//--into Float value:--------------: (builtin==mrk)
 			if (!mrk) profileIn[i].value.fv = atof(profileIn[i].sv); //--save float!  strtol(token,NULL,10/16)
 			//else .fv == eprom[].f_def (update) //--using builtin defaults
+			//---NAN check!!-----------: 
+			if (isnan(profileIn[i].value.fv)!=0) { 
+				fprintf(stderr," 0x%04X > !ERROR: profile value [%s] is not a number!\n\n",profileIn[i].hexa,profileIn[i].sv); 
+				 continue; } //NAN error
 			
 			/*/--Parse Profile FUNCTION:------------------------------------------------------ */
 			is = parseProfileValue("up", i,ey,eprom); 
@@ -842,7 +852,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	//################################################################################################
 	//--Get Current Hourmeter:-----------------------------------------: 
 	int tmp[2] = {0x0036,0x0037}; upRegisters(ctx, ram, num, tmp, 2); 
-	 short xx=0; xx = getIndex(0x0037,num,ram); //--:Global! int?
+	 short xx=0; xx = getIndex(0x0037,num,ram); //--:Global! 
 	now = ram[xx].value.lv; xx=0; //:now !!!
 	/* ####################################--Header--#########################################-: */
 	uint16_t data[1]; //--:Global for individual reads. 'unsigned short' %hu  --deprecated except for here!--
@@ -859,14 +869,14 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		  if (rc == -1) {	fprintf(stderr, "!%s\n", modbus_strerror(errno));  return -1; }
 		//--print charger state & debug:   //char CState[32] = ""; strcat(CState, );
 		printf("Charger State: %s\t\t\tHrmeter:%ld, Debug: %d\n",getStateString(0x0021, (uint16_t) data[0]),now,debug);
-		if (profile[0]) { printf("Profile: %s \n", profile); }//else if (polling){ " [%ld] ", now; }
+		if (profile[0]) { printf("Profile: %s \n", profile); } 
 		data[0]=0; 
 		/*/--read ------------------CHARGER  INFO:----------------: not Working!
 		uint16_t sdata[3]; //Device Identification addr: (0x2B, subcode 0x0E)
 		rc = modbus_read_registers(ctx, 0x00, 3, sdata);  
 		 if (rc == -1) {	fprintf(stderr, ">%s\n", modbus_strerror(errno));  return -1; }  // */
 		//--print -----------------Charger Info (below HEADER):-------:
-		//printf("Charger ID: %hu [ %hu ] %hu\t|\tDebug: %d\n%s\n\n", sdata[0],sdata[1],sdata[2], debug, CState);
+		//printf("Charger ID: %hu [ %hu ] %hu\n\n", sdata[0],sdata[1],sdata[2]);
 		//if using data[]: memset(&data[0], '\0', sizeof(data)); 
 	}
 	
@@ -884,7 +894,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	if (real_date_logs) {  //...avoid late night? prefer afternoon?
 		if (tmStruct->tm_hour > 4 && tmStruct->tm_hour < 24){ 
 				latest = writeLogCache(1); }
-		else {  latest = writeLogCache(0); } //create if (!logcachefile)
+		else {  latest = writeLogCache(0); } //-:create if (!logcachefile)
 		if (latest && latest <= (now-48)) { latest = writeLogCache(1); } //--:update anyway
 	} //* */
 	
@@ -906,8 +916,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			if (coil_updates[ii]==0x0013) { xx=1;  coil_updates[ii] = 0x0000; ci = 0; } 
 			else ci = getCoil(coil_updates[ii], numc, coils);
 			//--error exit:
-			if (!coils[ci].logical || ci == -1) { //--
-				printf(">Error Triggering Coil! [ 0x%04X ] \n", coil_updates[ii]); return -1; } 
+			if (!coils[ci].logical) { printf(">Error Triggering Coil! [ 0x%04X ] \n", coil_updates[ii]); return -1; } 
 			else printf(">Triggering Coil: [ 0x%04X ] : %s\n", coil_updates[ii], coils[ci].string);
 			fflush(stdout); 
 			//-------------------------------:
@@ -931,7 +940,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		}	}
 		//--finish: if EQ toggled, display current target voltage. 
 		if (xx) {	memset(&coil_updates[0], '\0', sizeof(coil_updates));  coil_updates[0] = 0x0024; 
-			upRegisters(ctx, ram, num, coil_updates, 1); tnum = getIndex(0x0024,num,ram);  //ram[tnum].value.fv;
+			upRegisters(ctx, ram, num, coil_updates, 1); tnum = getIndex(0x0024,num,ram); 
 			printf("\nBattery Target V:	%.2f v\n",ram[tnum].value.fv);
 		} 
 		printf("\nfinishing.... done.\n\n");   return 0;  //:exit
@@ -954,19 +963,19 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
   if (! skip_RAM) {  	//-RAM---
   	//--Build Bulk Block:
 	bulk[0].start = ram[0].hexa; bulk[0].i = 1;
-	for (int ii=1;ii<num;ii++) { 
+	for (ushort ii=1;ii<num;ii++) { 
 		if (ram[ii].hexa == (bulk[y].start+xx)){ bulk[y].i++; xx++; } 
 		else { y++; bulk[y].start = ram[ii].hexa; bulk[y].i = 1; xx=1; }  
 	} // * /
 	
 	//--Loop bulk registers array:   (sizeof(bulk) / sizeof(bulk[0]));
 	for(short i=0;i<16;i++) { if (!bulk[i].i) break; //--endof (bulk[].start will break on 0x0000 !!)
-		const int dsize = bulk[i].i;	uint16_t datas [dsize];   
+		const ushort dsize = bulk[i].i;	uint16_t datas [dsize];   
 		//--bulk read:
 		readModbus(ctx, bulk[i].start, bulk[i].i, datas);
 		//printf("\nSTARTING RAM: 0x%04X: \t[ %d ]\n", bulk[i].start, (int) datas[0]);
 	
-		int e = getIndex(bulk[i].start,num,ram);  short z=0;
+		short e = getIndex(bulk[i].start,num,ram);  ushort z=0; 
 		//--Assign data to ram struct in order... (replace datas[z] with *dp !)
 		for (uint16_t *dp = &datas[0]; dp < &datas[dsize]; dp++) { 
 			// * /--Combines Hi-LO:
@@ -987,31 +996,30 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	/* ################################## Read the EEPROM ####################################  */
 	//----Build Bulk Read:
 	bulk[0].start = eprom[0].hexa; bulk[0].i = 1; y=0; xx = 1;
-	for (int ii=1;ii<nume;ii++) { 
+	for (ushort ii=1;ii<nume;ii++) { 
 		if (eprom[ii].hexa == (bulk[y].start+xx)){ bulk[y].i++; xx++; } 
 		else { y++; bulk[y].start = eprom[ii].hexa; bulk[y].i = 1; xx=1; }  
 	} 
 	
 	if (!sil && debug && strcmp(action,"current_settings")!=0) { 
-		printf("\n--------------------------------------------------------------------" 
-			"\nBulk EEPROM Read: \t[ %zu ]\n", nume); }
+		printf("\n---------------- ----------------\nBulk EEPROM Read: \t[ %zu ]\n", nume); }
 	//--Loop bulk registers array:
 	for(short i=0;i<16;i++) { if (!bulk[i].i) break; //--endof (bulk[].start will break on 0x0000 !!)
-		const int dsize = bulk[i].i;		uint16_t datas [dsize];   
+		const ushort dsize = bulk[i].i;		uint16_t datas [dsize];   
 		//--bulk read:
 		readModbus(ctx, bulk[i].start, bulk[i].i, datas);
 		if (debug>1 && strcmp(action,"current_settings")!=0) { 
 			printf("\n%d: STARTING bulk eprom: 0x%04X: \t[ %d ]\n", i, bulk[i].start, (int) datas[0]); }
 	
-		int e = getIndex(bulk[i].start,nume,eprom);  short z=0;
+		signed short e = getIndex(bulk[i].start,nume,eprom);  ushort z=0; 
 		//--Assign data to eprom struct in order... (replace datas[z] with *dp !)
 		for (uint16_t *dp = &datas[0]; dp < &datas[dsize]; dp++) { 
 			char this_one = 0;
 			// *------ Write New EEPROM Value ---------------------------------- * /
 			if (update && strcmp(action,"current_settings")!=0) { 	
-				uint16_t new_value[1];  int upN = UPDATEABLE; //-redundant
-				//--check if data is set for updating: --------
-				for (int y=0; y < upN; y++) { if (!updates[y]) break;	//no more.
+				uint16_t new_value[1]; 
+				//--check if data is set for updating: -------- 
+				for (unsigned short y=0; y < UPDATEABLE; y++) { if (!updates[y]) break;	//no more.
 					if (eprom[e].hexa==updates[y]) { this_one = 1; } }
 				if (this_one) {	//--Update!----------------- && *dp!=eprom[e].f_new)
 					printf(">Updating...");
@@ -1026,9 +1034,9 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 					} else if (new_value[0] == eprom[e].f_new) { 
 						eprom[e].updated = 1;   if (debug) printf("\n"); //hack fix?
 					//--Error writing:-------------------------:
-					} else { printf(">Error writing [ 0x%04X ] new value [%hu]!"
+					} else { if (debug || new_value[0]==65534){ printf(">Problem parsing update!\n"); return -1; }
+						printf(">Error writing [ 0x%04X ] new value [%hu]!"
 									" current value: %hu \n", eprom[e].hexa, eprom[e].f_new, new_value[0]); 
-						if (debug) { printf(">Problem parsing update!\n"); return -1; } //if not: ...
 					} 
 					//--Pass new value: instead of previous---:
 					datas[z] = new_value[0]; 
@@ -1061,7 +1069,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	//--Display----------------------------------------------------------------:
 	display_loop: ;
 	//--skip display if debug: 
-	if (debug > 2 || ! display) { goto program_end; }
+	if (debug > 2 || !display || just_EEPROM) { goto program_end; }
 	/* /---open output buffer to file/stdout:-----------------------------:
 	else if (debug < 2) { //--deprecated
 		snprintf(bufs, sizeof(bufs), "%ld", c_time); 
@@ -1086,7 +1094,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 
 	fprintf(fp,"Charge total: 		%.4f KWh		Ah total:		%.2f Ah\n", 
 				(ram[getIndex(0x002B,num,ram)].value.fv), ram[getIndex(0x0029,num,ram)].value.fv); //-
-	fprintf(fp,"Charge (resetable):	%.4f Kwh		Ah (resetable):		%.2f Ah\n", 
+	fprintf(fp,"Charge (resettable):	%.4f Kwh		Ah (resettable):	%.2f Ah\n", 
 				(ram[getIndex(0x002A,num,ram)].value.fv), ram[getIndex(0x0027,num,ram)].value.fv);
 	fprintf(fp,"Median Charge Volts:	%.3f v  		SOC led:		%s\n",  
 			(ram[getIndex(0x0027,num,ram)].value.fv ? (ram[getIndex(0x002A,num,ram)].value.fv*1000) / ram[getIndex(0x0027,num,ram)].value.fv:0.0), ram[getIndex(0x003B,num,ram)].value.sv); 
@@ -1156,12 +1164,12 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	logBlock: ;
 	{ //-:logBlock: if(strcmp(action,"logs")==0) 
 		struct logStruct logs [256];     //ex. logs[x].log[0].value.lv => hrs , logs[x].log[y].typ => value
-/**/		long search=0; char sbt=0; //:sbt==logDate inbetween..
+/**/		long search=0; char sbt=0; char aorb=0;//:sbt==logDate inbetween , aorb==gap. tsA or tsB?
 		char strbuf [256]=""; uint start=0; //int logical; //Only start is needed!...... 
 		//--Log Cache scope variables:    [available from main:short xx,char skip_RAM,char mrk,] 
-		long earLog=0; //:earliest log hrmtr 				!!long -> unsigned log???!!
-/**/		short nextCD=0; long timeSkipA=0; long timeSkipB=0;   
-/**/		time_t cacheDate=0; int cindex=0; short cdMarker=0;   
+		long earLog=0; //:earliest log hrmtr 				!!long -> unsigned long???!!
+/**/		short nextCD=0; signed long timeSkipA=0; signed long timeSkipB=0;   
+/**/		time_t cacheDate=0; signed int cindex=0; signed short cdMarker=0;   
 /**/		time_t targetD=0; 
 		//----Add debug time to date:  
 		if (debug) strcat(date_format, ", %H:%M:00");  //log_debug
@@ -1176,7 +1184,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		
 		//--Normalize Time to help find correct log hourmeters:----------------------:
 		//---nNow used for creating search! , normT for creating targetDate! ...
-		long nNow=now; long normT=0; 								//--now==hours  check nNow for type probs! 
+		long nNow=now; time_t normT=0; 								//--now==hours  check nNow for type probs! 
 		//--normalize search: --to 4-6PM, before logs are written in winter--  [def:nH==6/21600]
 			//ex. 	now==2pm, hrofday=13, 23-13=10, nNow=(now+10)-nH
 		int hrofday=0; tmStruct = localtime (&c_time); //:needed reinit. struct tm *tmStruct;   //double tm declare!!
@@ -1301,7 +1309,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		}
 		
 		
-		float daysago = 0; time_t logDate; 
+		float daysago = 0; time_t logDate; time_t plog=0;
 		//__Print Loop: -----------------------------------------------------------------------------//--: 
 		if (!sil && !json) printf("\n>Found (%d) Logs:______________________________________ \n",totalLogs); 
 		for (short a=0; a<(int)logsx; a++) { //read all logs <256 !!!!-----------------------------//--:
@@ -1309,11 +1317,10 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			if (!logs[a].date){ logDate=0; //--no date:----------------------------:
 				if (!sil && !json) printf("\n-----------------------------\n>Date: [ null ] :\n"); 
 			} else { //--Parse hours into a date:----------------------------------: 
+				  //if (a || (!a && logOpt!=2)) { ... //--:(!logDate )
 				//time_t curr_hrs = c_time/60/60; 				//--:unix hrs
 				logDate = logs[a].date; 	logs[a].date=0;		//-:hrs here
 				//--hrs ago: !!subtract logDate from now and add buffer to get days ago, then subtract from time.
-				//ee = (nNow - logDate); //nNow is normalized but breaks things	** !!!! **
-				//if (debug>1) printf("<norm daysago=%f >\n",(ee/24.0));
 				long ee = (now - logDate); //:hrsago unbuffered :logDate exact exactness 
 				//if (debug>1) printf("<raw daysago=%f >\n",(ee/24.0));
 				
@@ -1326,14 +1333,14 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				//!--LogCache: skip first search-opt log, +skip if newer than cache. 1st cache search for..:
 				//else if (logCache[0].xt && logDate <= logCache[1].hrmtr+36 && (a || logOpt!=2)) {
 				else if (logCache[0].xt && (a||logOpt!=2)) { //-:(skip 1st daysago search)
-					//(logDate>=earLog &&  || (logDate<earLog && !a && logOpt==2))
 					/*/--LogCache: modify dates here, modify search above... */
 					//-----logCache[0].xt == real number of cached dates! starting at 1
-					char cdp=0; //cdp==true if searchLogCache(logDate,) , sbt==true if cindex<0 (for skipping reparse)
+					char cdp=0; //cdp==true if searchLogCache() , sbt==true if cindex<0 (for skipping reparse)
+					if (plog && (logDate-plog>24||logDate-plog<23)) {aorb=1;} else aorb=0; //-:gap in time? reparse, use A.
+					
 					//--SearchCache: new || prev. was latest || before all & !lbuf || log-wrap-around:...
-					//if (!cindex || cindex==1 ||(cindex>logCache[0].xt && !lbuf)||(a && logDate < logs[a-1].log[0].value.lv)){
+					////-----(!cindex && !a)				 ||(cindex>logCache[0].xt && !lbuf)||	
 					if (!cindex || cindex==1 ||(logDate < earLog && !a)||(a && logDate < logs[a-1].log[0].value.lv)){
-						//-----(!cindex && !a)
 						nextCD=0; cacheDate=0; searchLogCache(logDate, &cacheDate, &cindex);  cdp=1; sbt=0;
 						//--jump to parsing block:
 						cdMarker=1; goto cacheDParse; //-:parse block  
@@ -1343,19 +1350,17 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 						else if (cindex<0){ cindex=cindex*-1; sbt=1; } //
 					} else if (! nextCD && cindex && cindex<=logCache[0].xt) {  nextCD = cindex-1; } //-:init nextCD
 					
-					if (logs[a].date) { if (debug>1) printf(".");  } //-:exact match skip:dummy (exact: nextCD can eq 0!) 
-					else if (cdp) {  if (debug>1) printf(">>>done.\n");  }
+					//--Parse looping logDate: 
+					//-:exact match skip-dummy: (exact: nextCD can eq 0!) 
+					if (logs[a].date || cdp) { if (debug>1) printf(">>>done.\n");  } 
 					/*/--Above searchLogCache() skipped: check logDate buffers or re-search below... */
-					//---:before: cindex>.xt & nextCD==0, after: cindex==0 & nextCD==0, 
-					//else if (cindex>logCache[0].xt || !nextCD || nextCD<0) {  		?after? nextCD should eq 0..
+					//---:before: cindex>.xt & nextCD==0, after: cindex==0 & nextCD==0, //?after? nextCD should eq 0..
 					else if (logDate<earLog || !nextCD || nextCD<0 || (logDate>logCache[1].hrmtr+36)) {  
 						if (debug) printf(">>>Nothing more doing, before or after logCache. [buffer:%ld]\n",lbuf); 
 					} //--below uses nextCD to increment.. 
 					
 					//--if match use next cache date:  !!!!------time calculation -------!!!!!!!
 					//---searchLogCache() uses logdate +/- 12 for exact match-----------------------:
-					//next days (logdate-22): can be before prev days hrmtr... (..why normalizing helps.)
-					//12.28 log missing: (12.29)logDate=48335   (12.28)nextCD=48314
 					else if ((logDate+12) > logCache[nextCD].hrmtr && (logDate-12) < logCache[nextCD].hrmtr){
 						cindex=nextCD;  sbt=0; //timeSkipB=0;//zero     
 						if (debug){ printf(">>>Next cache date is a match>>[%d]\n",cindex); }
@@ -1365,7 +1370,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 						logs[a].date = logCache[cindex].udate; 
 					}
 					//--before next cache date - no change to lbuf: ..otherwise recalculate below: (and set sbt) 
-					else if ((sbt || !lbuf) && logDate < logCache[nextCD].hrmtr-12) { 
+					else if (!aorb && (sbt || !lbuf) && logDate < logCache[nextCD].hrmtr-12) { 
 						if (debug){ snprintf(sbuf,sizeof(sbuf),"(buffer of %ld hrs)",lbuf);
 							printf(">>>before next cache date>> %s\n", (!lbuf? "(no buffer)":sbuf)); } 
 					} 
@@ -1381,6 +1386,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 						}
 						else { //--re-search logcache: (logDate > logCache[nextCD].hrmtr)
 							if (debug) { printf(">>>Log date after next cache date. Searching again..\n"); }
+							if (aorb) aorb=0; //-:missed log, rather than missed time...
 							nextCD=0; cacheDate=0; searchLogCache(logDate, &cacheDate, &cindex); cdp=1;
 							cdMarker=2; goto cacheDParse; //-:parse block  
 							cacheDParse2: ;	 sbt=0; //..reset sbt mark
@@ -1451,7 +1457,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				// * //--Formated:--------------------------------------------: * /
 				printf("################################## 0x%04X #####################################\n",logs[a].log[0].hexa);
 				printf("%s	%s\n",(cdMarker==1?"Cached Date:\t":"Approximate Date:"),logs[a].date_s); 
-				if (cindex && timeSkipB>4) printf("\t\t(date is within [%ld] hrs)\n",timeSkipB);//-:buffer vagueness >6?
+				if (cindex && timeSkipB>4) printf("\t\t(date is within +%ld hrs)\n",timeSkipB);//-:buffer vagueness >6?
 				printf("Time of Log: %ld hrs		(%.0f days ago)\n",logs[a].log[0].value.lv, daysago);
 				printf("Min Battery volts:	%f v	Max Array volts:	%f v\n",logs[a].log[8].value.fv, logs[a].log[12].value.fv);
 				printf("Max Battery volts:	%f v	Load Ah:		%f Ah\n",logs[a].log[9].value.fv, logs[a].log[11].value.fv);
@@ -1464,7 +1470,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				printf("%s",logs[a].log[5].value.sv);  //Load Faults: 	
 				printf("%s",logs[a].log[7].value.sv);  //Array Faults:	
 				printf("\n###############################################################################\n");
-			} 
+			} if (logCache[0].xt){ plog=logDate; } targetD=0; //-:clear/reset for next log (..not used much)
 		} //-:Done Looping Logs. - close json logs array and file:
 		if (json) { writeFile ("logs", c_time, "]}\n"); if (!sil){printf(">Logs written to json..\n\n");} return 0; }
 		//-:close
@@ -1479,16 +1485,17 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 		 	//---cindex: 0=gt last, 1(+)=within 48hrs, 2(minus)=gt cindex & lt next, 3(total++)=lt oldest
 			//----timeSkipA/B are Hours diff from continuous use [hrmtr] date == buffer.----: 
 			//---- computed log dates == c_time-( ((now-logDate)+lbuf)*3600 )  
-		 	//--logCache[cindex].nHrs = hrs to add to [cindex].hrmtr to normalize time..affects what date a log is given. */
+		 	//--logCache[cindex].nHrs = hrs added to [cindex].hrmtr to normalize time.. for that day. */
 		 	if (debug>2) printf("parsing [%d] in goto block:\n",cdMarker); //" %ld",targetD
 		 	/*/--Before cache Dates:-------------------------------------------------: // */
 			if (cindex>logCache[0].xt) { if (debug) printf(">Target Date is before any log cache dates.\n"); 
 				//--Use oldest cache date for buffer:----------------------: {been here already?} 
 				cindex--; //--:oldest log, change back before returning! 
 				timeSkipB = (c_time-logCache[cindex].udate)/3600 - (now-logCache[cindex].hrmtr);
+				if (timeSkipB<0){ timeSkipB = 0; } //timeSkipB*-1
 				if (cdMarker==0||cdMarker==-1) { //init-ing search  && cindex>logCache[0].xt)
-					//--Diff b/t target date and cache dates: ¡¡targetD date is OLDEST possible!!
-					float last = (logCache[cindex].udate-targetD)/3600; //-:hrs/24.0   //long expectedD = search;
+					//--Diff b/t target date and cache dates: ¡¡targetD is actual target date!!
+					float last = (logCache[cindex].udate-targetD)/3600; //-:hrs/24.0   //expectedD = search;
 					 if (debug>1) printf(">>timeSkipB: %ld  ,  oldest: %f\n",timeSkipB,last);																	
 					//--refactor search:-------------------:
 					search = logCache[cindex].hrmtr-last; //-:using last
@@ -1498,7 +1505,6 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 					 if (debug>1) printf(">>oldest [%d] %ld timestamp to target being used. \n",cindex, logCache[cindex].hrmtr-logCache[cindex].nHrs); 
 				}  
 				if (debug>1) printf(">>(New hrmtr correctness: [%ld]) using oldest value\n",timeSkipB);
-				if (timeSkipB<0){ timeSkipB = 0; } //timeSkipB*-1
 				nextCD=cindex; lbuf=timeSkipB; //--:lbuf - last known buffer... 
 				cindex++;      timeSkipB=0; //zero. no need to display buffer. 
 				if (debug && cdMarker && lbuf) printf("Buffer of %ld hours\n", lbuf);
@@ -1517,65 +1523,98 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			/*/--Search found possibly close matches:--------------------------------: // */
 			else if (cacheDate && cindex) { 	cindex=cindex*-1;  nextCD=cindex-1;   
 				//--:target gt previous, lt next------------------------------: 
-				float previous = 0;	 float nextCache = 0;  long expectedD=0; //:checking date buffer
+				long expectedD=0; //:checking date buffer --targetD is date from now w/no buffer!--
+				float previous = 0;	 float nextCache = 0;  
 				//--Hourmeter Date Buffer:-----------------gaps in time since now-------:
-				//-hrs before/after:	buffer: timeSkipA is min, timeSkipB is max. 
+				//-buffer: timeSkipA is min, timeSkipB is max. (previous+nextCache)=total hrs;
 				timeSkipA = (c_time-logCache[nextCD].udate)/3600 - (now-logCache[nextCD].hrmtr);
 				timeSkipB = (c_time-logCache[cindex].udate)/3600 - (now-logCache[cindex].hrmtr);
-				//notes:---------------------------------------:   (previous+nextCache)=total hrs;
-				//-Find which cache ts date/buffer is better base for date...  
-				//--if (time b/t != hrs b/t):--------:   ..lbuf==timeSkipB most of time...
-				//---(([nextCD].udate-[cindex].udate)/3600 != ([nextCD].hrmtr-[cindex].hrmtr)) { timeSkipB }
-				//--logCache dates nonexact!  neg values due to normalization, fixed below.  !round down lbuf?
-				
-				if (cdMarker==0||cdMarker==-1) { //init-ing search:-----: 
-					//--Diff b/t target date and cache dates: ¡¡targetD date is NOW based!!
-					previous = (targetD-logCache[cindex].udate)/3600; //-:hrs/24.0   !(-lbuf)
-					nextCache = (logCache[nextCD].udate-targetD)/3600;//-:hrs/24.0   !(+lbuf)  
+				//notes:---------------------------------------:    lbuf==timeSkipB most of time...
+				//!--timeSkipB==default because charger can turn OFF on own, when turned on its assumed logcache is updated.
+				/* ----- timeSkipB is displayed as date exactness buffer ------------------------ */ 
+				if (timeSkipA<0){ timeSkipA=0; } //--negative values..due to normalization:!! //-:zero both. 
+				//--:Isolate timeSkipB 
+				if (timeSkipB > timeSkipA) { timeSkipB= timeSkipB-timeSkipA; }	else { timeSkipB = 0; }
+								
+				//-Init-ing search:---------------------------------------------------: 
+				if (cdMarker==0||cdMarker==-1) { //0==most recent possible
+					//--Diff b/t target date and cache dates: ¡¡targetD is actual date!!
+					previous = ceil((targetD-logCache[cindex].udate)/3600); //-:hrs/24.0   !(-lbuf)
+					nextCache = ceil((logCache[nextCD].udate-targetD)/3600);//-:hrs/24.0   !(+lbuf)  
+					//--expectedD:search is hrmeter base! targetD is time based! both are normalized!
+					expectedD = targetD; //--match! hopefully.
 					//--refactor search, check buffer:
-					search = logCache[cindex].hrmtr+previous; //-:using previous +timeSkipA
+					search = logCache[cindex].hrmtr+(long)previous; //-:using previous 
 					if (search>logCache[nextCD].hrmtr) {
-						printf(">search: [%ld] moved before nextCD [%ld].\n",search,logCache[nextCD].hrmtr);
+						if (debug) printf(">search: [%ld] moved before nextCD [%ld].\n",search,logCache[nextCD].hrmtr);
 						/*search = logCache[nextCD].hrmtr - nextCache;
-						if (search<logCache[cindex].hrmtr) { 
-							search = (logCache[nextCD].hrmtr-logCache[cindex].hrmtr)/2;
-							search = search<24?24:search;
-							search = logCache[nextCD].hrmtr-search;
-						} else // */
-						search = logCache[nextCD].hrmtr - 24; //----------goto last log before next---!!!!!! -32? !!!!!
-						//expectedD = logCache[nextCD].udate - (24*3600); //targetD; //cindex+n logs? actually not!!
-						expectedD = c_time-(((now-search)+timeSkipB)*3600); 
-					} else { 
-						//--expectedD = search; //search is hrmeter base! targetD is time based! both are normalized!
-						expectedD = targetD; //--match! hopefully. 
-						//same:expectedD = logCache[nextCD].udate-(nextCache*3600);
-					}
-				} else { //-Logs:---------------------------------------: subtract logCache[cindex].nHrs ?!?
-					//targetD = normT-((nNow-logDate)*3600); //  !normalize check?!    ((nNow-logDate)+timeSkipA)	//+A?
-					targetD = c_time-((now - logDate)*3600);
-					if (lbuf && lbuf == timeSkipA) targetD -= timeSkipA*3600;
-					else targetD -= timeSkipB*3600;
-					/*/--should continue to be timeSkipB.. 
-					//targetD = normT-(((nNow-logDate)+timeSkipB))*3600); //  !normalize check?! */
-					
-					previous = (targetD-logCache[cindex].udate)/3600;   //-:hrs/24.0 	-(timeSkipB*3600))	
-					nextCache = (logCache[nextCD].udate-targetD)/3600;  //-:hrs/24.0-(timeSkipA*3600))
-					expectedD = (logCache[cindex].udate+(previous*3600));
-					/*/expectedD = logCache[cindex].hrmtr+previous; //-:check date overrun! +timeSkipB !!!!!!!!!!!!!!!!!!!!
-					//--TWO possibles? 
-					expectedD = normT-((logCache[cindex].hrmtr+previous)*3600);
-					*/
-					//expectedD = logCache[cindex].hrmtr+previous; //-:check date overrun! +timeSkipB !!!!!!!!!!!!!!!!!!!!
-					//expectedD = targetD-(timeSkipB*3600); //??+(24*3600); //+24
-					// */
-					
-					/*//--Check buffer Range:  use c_time? normT? , ?(nNow just inits search)
-					 example: targetD=6pm+secs , targetDa=6pm minus secs  , targetDb=4pm (iso-timeSkipB+=2hr) * /
-					 int targetDb = logCache[cindex].udate+((logDate-logCache[cindex].hrmtr)*3600);//needs iso-timeSkipB
-					 int targetDa = logCache[nextCD].udate-((logCache[nextCD].hrmtr-logDate)*3600);//timeSkip builtin
-					 //---targetDa is same as targetD (other than secs).
-					printf(">in-between Debug: TargetD = %ld , a=%d , b=%d \n", targetD, targetDa, targetDb); // */
+						if (! search<logCache[cindex].hrmtr){ expectedD = logCache[nextCD].udate-(nextCache*3600); }// */
+						search = logCache[nextCD].hrmtr - 24; //----------goto last log before next---
+						expectedD = c_time-((now-search+(timeSkipA+timeSkipB))*3600); //-:full timeSkip. [Working!]
+				}	} 
+				else { //-Logs:-------------------------------------------------------:
+					//-----Range:targetD-(tSA...tSB) -timeSkipA:YES ALWAYS , -timeSkipB: maybe...(but always default)
+					//targetD = normT-((nNow-logDate)*3600); //  !normalize check?!
+					targetD = (c_time-((now - logDate)*3600))-(timeSkipA+timeSkipB)*3600;			//:default=full buffer
+					expectedD = targetD; 	search=0;  //:search && plog could be combined
+					//if (lbuf && lbuf == timeSkipA) { expectedD = targetD+(timeSkipB*3600);  } 	//:add back
+						//:only modify/use expectedD.	//targetD isn't used below here!! expectedD isnt either!
+					/*/--:default should continue to be Full timeSkipB.. */ 
+					previous = ceil((expectedD-logCache[cindex].udate)/3600);   //-:hrs/24.0 	ceil()??
+					nextCache = ceil((logCache[nextCD].udate-expectedD)/3600);  //-:hrs/24.0	
+					//logsB=(logDate-logCache[cindex].hrmtr); logsA=(logCache[nextCD].hrmtr-logDate);
 				}
+												
+				/*//--Basic Buffer Check: ----------------------------------------------------------------
+				------------------------------------------------------------------------------------------
+				//-Find which cache ts date/buffer is better base for date...  
+				//--if (time b/t != hrs b/t):--------:  
+				//     (([nextCD].udate-[cindex].udate)/3600 != ([nextCD].hrmtr-[cindex].hrmtr)) { timeSkipB }
+				//--recalculate lbuf to bring hrsago to correct date.:    
+				// lbuf==amount of additional time to subtract from now for date...
+				// use later if gt/lt:----------: ! 
+				if (expectedD<logCache[cindex].udate) {	expectedD = targetD+(timeSkipB*3600);
+						if (debug) printf(">>expectedD is < cindex. only timeSkipA instead.\n");
+				}
+				///--possibles? -:check date overrun!            //subtract logCache[cindex].nHrs ?!? 
+					normT-((logCache[cindex].hrmtr+previousB+timeSkipB)*3600); // !!!!
+					normT-((logCache[nextCD].hrmtr-nextCacheA+timeSkipB)*3600); // !!!!
+					//-:check date overrun! +timeSkipB !!!!!!!!!!!!!!!!!!!!
+				// */ /*
+				if (timeSkipB>24) { //--Start test Btree and then check Atree: to prune down buffer display time..
+					//--lbuf set above, displayed missing time:
+					printf("|>tsB[%ld], dbuf[%.2f]\n\n",timeSkipB,dbuff);
+					if (dbuff) timeSkipB = (long)ceil(dbuff); //(dbuff-floor(dbuff)<0.5)?(long)floor(dbuff):(long)ceil(dbuff);
+				}
+				//--timeSkipB<24 skip details----:  //--WORKING: // */
+				if (debug && !logDate) printf("|>logDate: [%ld]\n",logDate); //
+				
+				//---timegaps b/t timeSkipB and timeSkipA may affect date or not..(earliest date possibility is displayed)
+				if (aorb || timeSkipB>1) { 
+				 //if (aorb || (logCache[cindex].hrmtr+(long)previous) > logDate+10) { //[working!] 
+				 if (aorb || (lbuf && lbuf==timeSkipA) || (search && logCache[cindex].hrmtr+(long)previous > logDate+10)) {  
+					//--Search init: expectedD = last log before turned off? ... if search, previous==real time. 
+					if (cdMarker==0 || cdMarker==-1) { lbuf = timeSkipA+timeSkipB; } //:default search (missing time)
+					else { //--expectedD == targetD (w/timeSkipA)
+						expectedD = targetD+(timeSkipB*3600); //-:add back. 
+						nextCache-=timeSkipB; previous+=timeSkipB; //-:shift back
+						//--buffer:         //"This log could be from B to A, "	
+						lbuf = timeSkipA;  //! [working!]   
+					}					
+					if (debug) printf(">later timestamp [%d] %ld to target %.2f days. (previous %ld: %.2f)\n"
+										"Using timeSkipA instead.\n",nextCD, 
+							logCache[nextCD].hrmtr-logCache[nextCD].nHrs,nextCache/24,logCache[cindex].hrmtr-logCache[cindex].nHrs,previous/24); //>1
+				 //--else if ((logCache[nextCD].hrmtr-nextCache) < logDate-12 ) { //!
+				 //--Full buffer:--------------------------------------------:
+				 } else {  lbuf = timeSkipA+timeSkipB; //--:default buffer.   roundup(previous/24)?
+					//if (cdMarker>0) expectedD = ;  //-:modify, already set above.
+					if (debug){ printf(">previous timestamp [%d] %ld to target %.2f days. (later %ld [: %d]: %.2f)\n",
+							cindex,logCache[cindex].hrmtr-logCache[cindex].nHrs,previous/24,
+							logCache[nextCD].hrmtr-logCache[nextCD].nHrs,(int)logCache[nextCD].nHrs,nextCache/24); }
+				 } 
+				} else { lbuf = timeSkipA; if (debug){ printf(">no timeSKip. [Using A]\n"); } }
+				
+				
 				//>1--debug:------------------------------------------------------------------:
 				if (debug) { 
 					printf(">>nextCache: %.02f  ,  PREV: %.02f \n",nextCache,previous);	
@@ -1584,50 +1623,16 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 					printf(">>>(targetD = %ld == %s",  targetD, ctime(&bhr));
 					bhr = (time_t) expectedD;
 					printf(">>>(expectedD = %ld == %s\n", expectedD, ctime(&bhr) );
-				}
-				//--DEBUGing ---------------------- timeSkipB---------:-----------: !!!>1
-				if (debug && (logCache[nextCD].udate-logCache[cindex].udate)/3600 != (logCache[nextCD].hrmtr-logCache[cindex].hrmtr)) { long expDn = (logCache[nextCD].hrmtr-nextCache);
-					printf(">>TimeSkip in hrmtrs: %ld ts != %ld hrm -  later base?:[%ld] %s\n",((logCache[nextCD].udate-logCache[cindex].udate)/3600), (logCache[nextCD].hrmtr-logCache[cindex].hrmtr), expDn, 
-							(expDn<logCache[cindex].hrmtr?"(wrong!)\n":"(ok)")); 
-				} //--:DEBUG! ------------------------------------ */
 				
-				//if (timeSkipA<0){ timeSkipA=timeSkipA*-1; } if (timeSkipB<0){ timeSkipB=timeSkipB*-1; } 
-				if (timeSkipA<0){ timeSkipA=0; } if (timeSkipB<0){ timeSkipB=0; } //-:zero both. needed.
-				/* ----- timeSkipB is displayed as buffer ------------------------ */ 
-				//--Isolate timeSkipB:  timegaps b/t timeSkipB and timeSkipA may affect search or may not...
-				if (timeSkipB != timeSkipA) { timeSkipB= timeSkipB-timeSkipA; }	
-				else { timeSkipB = 0; }
-				/*//--Basic Buffer Check: ----------------------------------------------------------------
-				------------------------------------------------------------------------------------------
-				 //recalculate lbuf to bring hrsago to correct date.:    
-				 //lbuf==amount of additional time to subtract from now for date...
-				 //use later if gt/lt:----------: ! expectedD>logCache[nextCD].hrmtr || targetD
-				if (expectedD<logCache[cindex].udate) {	expectedD = targetD-(timeSkipA*3600);
-					if (debug) printf(">>expectedD is < cindex. using timeSkipA instead.\n");
-				} // */
-				if (cdMarker > 0 && logCache[cindex].hrmtr+previous > logDate+10) { //! 
-					 //&& ??  //"This log could be from A to Z, "
-					lbuf = timeSkipA;  //-!   //expectedD = targetD-(timeSkipA*3600);
-					//if (cdMarker==0||cdMarker==-1) search = logCache[nextCD].hrmtr-nextCache; //!!!!!!!!!!  
-					//if (debug) printf("[search: %ld]>>expectedD is < cindex. using timeSkipA instead.\n",search);
-					if (debug) printf(">later timestamp [%d] %ld to target %.2f days. (previous %ld: %.2f)\n"
-										"Using timeSkipA instead.\n",nextCD, 
-							logCache[nextCD].hrmtr-logCache[nextCD].nHrs,nextCache/24,logCache[cindex].hrmtr-logCache[cindex].nHrs,previous/24); //>1
-				//} else if ((targetD+nextCache-timeSkipA) > (logCache[nextCD].hrmtr)) { for precision..??
-				
-				//--Full buffer:--------------------------------------------:
-				} else {  lbuf = timeSkipA+timeSkipB; //--info/debug message: roundup(previous/24)
-					//if (cdMarker==0||cdMarker==-1) search += timeSkipB;  //>1
-					if (debug){ printf(">previous timestamp [%d] %ld to target %.2f days. (later %ld: %.2f) [search: %ld]\n",
-							cindex,logCache[cindex].hrmtr-logCache[cindex].nHrs,previous/24,
-							logCache[nextCD].hrmtr-logCache[nextCD].nHrs,nextCache/24,search); }
-				}  
-				/*/--cache buffering debug: 
-				if (debug && logCache[cindex].nHrs) { //not true if using nextCD...
-					printf("cached date-time normalized %d hours\n",(int)logCache[cindex].nHrs); 
-				} // */
-				//--cleanup--------------------:
-				if (timeSkipB<0){ timeSkipB = timeSkipB*-1; } //move up??
+					//--DEBUGing ---------------------- timeSkipB---------:-----------: 
+					//--..inaccurate when small [<2]? but notable (and usable w/aorb) when bigger !!!>1
+					if ((logCache[nextCD].udate-logCache[cindex].udate)/3600 != (logCache[nextCD].hrmtr-logCache[cindex].hrmtr)) { long expDn = (logCache[nextCD].hrmtr-nextCache);
+						printf(">>TimeSkip in hrmtrs: %ld ts != %ld hrm -  later base?:[%ld] %s\n",((logCache[nextCD].udate-logCache[cindex].udate)/3600), (logCache[nextCD].hrmtr-logCache[cindex].hrmtr), expDn, 
+								(expDn<logCache[cindex].hrmtr?"(wrong!)\n":"(ok)")); 
+					} else { printf(">>No TimeSkip.\n"); } //
+				} //--:end DEBUG! ------------------------------------ */ 
+				//--cleanup----------------------------------------------:
+				//if (timeSkipB<0){ timeSkipB *= -1; } //redundant unless recalculated
 				cindex=cindex*-1;  //--:reset
 				if (debug && lbuf) printf("Buffer of %ld hours\n", lbuf);
 			}
@@ -1671,7 +1676,7 @@ static void readModbus(modbus_t *ctxx, uint start, ushort length, uint16_t *data
 		        exit(EXIT_FAILURE); // return -1;
 		}    }  
 		
-		//--bulk read:	//uint16_t datas [length];   
+		//--bulk read:	//uint16_t datas [length];   //fprintf(stderr, ">read: [%d] 0x%04X\n", x,start); !!!!!
 		rc = modbus_read_registers(ctxx, start, length, datas);
 		if (rc == -1) {	if (debug) fprintf(stderr, ">read: %s\n", modbus_strerror(errno)); 
 			x++; } //printf(">read: start: 0x%04X x %d\n",start,length);
@@ -1685,11 +1690,11 @@ void upRegisters(modbus_t *ctxx, RamObj *inStructA, int num, int *registers, int
 	//--in-place editing of RamObj----------------------: (ex: upRegisters(ctx, ram, num, 3hexaArray, 3);)
 	uint16_t rdata[rn]; 	
 	//--Fill register struct-- 
-	for (int i=0; i<rn; i++) {
+	for (ushort i=0; i<rn; i++) {
 		//--read:
 		readModbus(ctxx, registers[i], 1, rdata);
 		//--parse values into RamObj ram[] or eprom[]: 
-		int ri = getIndex (registers[i],num,inStructA);   //-
+		short ri = getIndex (registers[i],num,inStructA); 
 		//--Combines-------------------------------:
 		if (strncmp(inStructA[ri].calc,"comb",4)==0) {   
 			inStructA[ri].value.lv  = combine(inStructA[ri].hexa, rdata[0], num,inStructA); 
@@ -1711,7 +1716,7 @@ static uint16_t writeUpdate(modbus_t *ctxx, RamObj *inStruct) {
 	} else { printf(">not writing....[ 0x%04X ] ", inStruct->hexa); }
 	 //--Check if Value written correctly:-------------------: */
 	rc = modbus_read_registers(ctxx, (int) inStruct->hexa, 1, wdata); 
-	 if (rc == -1) { fprintf(stderr, "%s\n", modbus_strerror(errno)); modbus_free(ctxx); return -1; }
+	 if (rc == -1) { fprintf(stderr, "%s\n", modbus_strerror(errno)); modbus_free(ctxx); return 65534; }
 	/* /--data check: -...compare after call...-
 	if (wdata[0]!=inStruct.f_new) { fprintf(stderr,"\n>Error writing new value [%hu]!"
 								" current value: %hu \n\n", inStruct.f_new, wdata[0]); } //- */
@@ -1741,7 +1746,7 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 		if (leftovers){ bulk[bi].i=leftovers; //bulk[(tnum/maxLogs)-1]=leftovers; 
 				if (debug>2) printf(">...bulk %d (leftovers) - %d - starting:0x%04X\n",bi,leftovers,bulk[bi].start); bi++;} 
 				//*/
-		for (int uu=0; uu<tnum/maxLogs; uu++) { //:(min # of reads)
+		for (ushort uu=0; uu<tnum/maxLogs; uu++) { //:(min # of reads)
 			if (uu) { bulk[bi].start = bulk[bi-1].start+(maxLogs*16); } //uu*
 			if (bulk[bi].start>0x8FFF) {bulk[bi].start=0x8000; lp=1;} 
 			//--if readLogs start is reread after null-loop-around:
@@ -1802,17 +1807,18 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 		//--Search Return:-----------------------------------------------------:
 		if (p<bulk[b].i && (searching || !leftovers)) { total+=p; //-:!leftovers marks skipahead section
 				if (debug>1){printf("readLogs: ...last log...\n");} break; } //-:lastlog
+		
 		//--SkipAhead:... & fill rest of bulk[b] logs--------------------------:
 		else if (p<bulk[b].i && leftovers){ bi+=p; total+=p; logx+=p; short px=logx; //-:start with logs[px]  
 			/*/--blank means logs hit cleared area:------------------------------- *///(size is b/t ~58 logs and ~2)
 			if (debug>1){printf("readLogs %d: ...skipping forward...found %d\n",b,total);}  
 			leftovers=0; //-:-----Do NOT loop around nulls again (if tnum is >logs)--------
-			/* ---------------- skip forward mini search loop -------------------- */
-			uint16_t datalm[maxLogs*16]; char lx=0; 
-			char marker=0; start = bulk[b].start+(21*16); 
+			uint16_t datalm[maxLogs*16]; char lx=0; char marker=0;
+			bulk[b].start+=p*16; start = bulk[b].start+(21*16); //!
+			/* ---------------- skip forward mini search loop -------------------- (0x9000-16*maxLogs)=0x8FA0 */
 			while(!marker){ //!!-- lp==2? rechecking endoflogs , lp==3? return next non-void log --
 				if (start>0x8FF0) { start=0x8000; lp = lp?lp:1; if (lp==2){lp=3;} } //-:wrap. (1st ram of last log)
-				else if (start<0x8000) { start=0x9000-(16*maxLogs); lp=2;  } //:recheck end. (0x9000-16*maxLogs)=0x8FA0
+				else if (start<0x8000) { start=0x9000-(16*maxLogs); lp=2;  } //:recheck end. 
 				memset(&datalm[0],'\0', sizeof(datalm)); //-:reset: 
 				//--checking overflow Read:--------------------------------:
 				remaining = (0x9000 - start)/16; lx=0; 
@@ -1820,13 +1826,13 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 				else { readModbus(ctxx,start,maxLogs*16,datalm); lx=(maxLogs-1);  } 
 				
 				//--Data Check: skip ahead/before,find next non-null log---:[logDates]
-				if ((!datalm[0] || datalm[0]==65535) && (!datalm[lx*16] || datalm[lx*16]==65535)){ 
-						start+=10*16;  } //:--both 1st & last null---
-				//--Loop 2,3 Content:----------------------------::  lp==[2,3]
-				else if (lp>1 && datalm[0] && datalm[0]!=65535) { //--:end of logs recheck:
-					if (lp==2) { //--search for beginning of content:
-						if (start <= (bulk[b].start+16)){ start += 16; } 
-						else {start -= maxLogs*16; if (start<=(bulk[b].start+16)){ lp=3; start=bulk[b].start+32; }  } 
+				if ((!datalm[0] || datalm[0]==65535) && (!datalm[lx*16] || datalm[lx*16]==65535)){
+						if (lp==2) {start+=maxLogs*16; lp=3;} else start+=10*16; } //:--both 1st & last null---
+				//--Loop 2,3 Content:----------------------------::  
+				else if (lp>1 && datalm[0] && datalm[0]!=65535) { //--search beginning of content:
+					if (lp==2) { //--:end of logs recheck:
+						if (start <= bulk[b].start){ start += 16; } 
+						else {start -= maxLogs*16; if (start<=bulk[b].start){ lp=3; start=bulk[b].start+16; }  } 
 					} else { marker=1; //:--after end-block recheck----: (lp==3) 
 						if (debug>1) printf("!! ReChecked LogEnd !!!!!!!!!!\n"); }
 				} //--Loop 1 Content:----------------------------::
@@ -1836,7 +1842,6 @@ static short readLogs(modbus_t *ctxx, uint start,short tnum,LogObj *logs) {
 				else if (!datalm[0] || datalm[0]==65535) {start+=16; if(lp==2)lp=3; } //:no data, check next: (mark the void)
 			} //-:exit while loop. 	.................................................
 			if (marker==2 && remaining <= maxLogs) { remaining-=1; }
-			//else if (remaining > maxLogs) { remaining = maxLogs; }
 			//--Start is at oldest log---------------------------------------------:
 			if (remaining > (bulk[b].i-bi)) { remaining=(bulk[b].i-bi); lx=maxLogs; } //:just one read.
 			if (lp && start>=bstart) {break;} //--:exit if looped back to start..
@@ -1973,7 +1978,7 @@ static short searchLogs(modbus_t *ctxx, uint start, long search, short tnum, Log
 		
 		if (logDate) {   // * -- Search precision:  hourmeter -- * /
 			//--Found it:----------------------------------------------:  		
-			if (search >= (logDate-12) && search < logDate+6) { break; }        				//!found! First.
+			if (search >= (logDate-12) && search < logDate+8) { break; }        				//!found! First.
 			//if (search >= (logDate-12) && search < logDate+(((tnum-1)*24)+6)) { break; }  	//!found! Bracket.
 				//--sameday done below: ns>0 && ns<16 //sameday (logDate - 21)
 						
@@ -2031,7 +2036,7 @@ static const long writeLogCache(char dool) {
 	long latestHr=0; char e = 0; char fpbuf [512]=""; //char str[128]="";
 	//printf(">Log Cache to %s.\n",file_logCache);
 	//--Check file, create or read/write:--------------------------------------:
-	struct stat exists;   	short st = lstat(file_logCache, &exists);			
+	struct stat exists;   	signed short st = lstat(file_logCache, &exists);			
 	if ((st == -1 && errno == ENOENT) || dool==3) {   char tmp[48] = "";
 		if (dool!=3) { snprintf(tmp, (size_t)48, "%ld, %ld,", now,c_time); }  //-:rebuilding cache
 		//--write header w/ cvs def line if new file:
@@ -2091,7 +2096,7 @@ static const long readLogCache(char doo[]) {
 		//--Rebuild?: backup and recreate at end of func: !!!
 		if (file_size > MAX_CACHE_SIZE) { rebuildCache=1; }
 		fseek(fpp,-rbytes, SEEK_END); //-read from end
-		fread(str, rbytes, 1, fpp); int readIts=1; //-:read multiplier
+		fread(str, rbytes, 1, fpp); signed int readIts=1; //-:read multiplier
 		long preNl=0;
 		
 		//--Loop profile lines:----------------------------------------------------------:
@@ -2128,13 +2133,13 @@ static const long readLogCache(char doo[]) {
 					//--Trim whitespace, Error if not valid: ||token==NULL  ||strncmp(token,"\n",1)==0
 					if (token) {trimP(token);} if (!token) {next=1; nls--; continue;} 
 					
-					if (strspn(token,"1234567890")!=strlen(token)) { //-- || strtol(token,NULL,10)==0 !!!!!works???
+					if (strspn(token,"1234567890")!=strlen(token)) { //--
 						printf(">ERROR: log cache hourmeter [%s] unspported.\n\n",token); 
 						next=1; nls--; continue; } 
 					//--Convert hourmeter string into number:-----------------------: resulTmp=1;
 					else { logCache[st].hrmtr = strtol(token,NULL,10); }
 					//--check hourmeter
-					if (logCache[st].hrmtr < 0 || logCache[st].hrmtr > now) { //return ret; } stderr,
+					if (logCache[st].hrmtr < 0 || (st>1 && logCache[st].hrmtr > now)) { //return ret; } stderr,
 						printf(">ERROR: log cache hourmeter [%s] unspported.\n\n",token); 
 						next=1; nls--; continue;} 
 					
@@ -2154,7 +2159,7 @@ static const long readLogCache(char doo[]) {
 					if (strspn(token,"1234567890")==resulTmp) { //--timestamp:-------------------------------:
 						logCache[st].udate = (time_t) strtol(token,NULL,10); 
 						//--check/filter unix date number:
-						if (logCache[st].udate <= 0 || logCache[st].udate > ts) { 
+						if (logCache[st].udate <= 0 || (st>1 && logCache[st].udate > ts)) { 
 							fprintf(stderr,">ERROR: log date cache, line %d unspported. %ld\n",tmp,logCache[st].udate); logCache[st].udate=0; next=1; nls--;  continue; }
 						//--date string:---------------------:	
 						  if (debug>3) printf(">line %d found cache date [ %ld ],\n",tmp, logCache[st].udate); //
@@ -2172,7 +2177,7 @@ static const long readLogCache(char doo[]) {
 					else if (strspn(token,"1234567890-")==resulTmp) { //--timestamp from string:----------:
 						strncpy(logCache[st].date_s, token, 127); logCache[st].date_s[127]='\0'; 
 						  if (debug>3) printf(">line %d found cache date string [ %s ]\n",tmp, token); 
-						struct tm logD = {0};  logD.tm_isdst = -1; int ret=0;
+						struct tm logD = {0};  logD.tm_isdst = -1; ret=0;
 						//--configured format:
 						if (log_cache_month_position==1) {
 							ret = sscanf(logCache[st].date_s, "%d-%d-%d", &logD.tm_mon, &logD.tm_mday, &logD.tm_year); }
@@ -2187,11 +2192,11 @@ static const long readLogCache(char doo[]) {
 						//--nomalizing hrmtr not possible.
 							 
 						//--check/filter unix date number:
-						if (logCache[st].udate < 0 || logCache[st].udate > ts) { 
+						if (logCache[st].udate < 0 || (st>1 && logCache[st].udate > ts)) { 
 							fprintf(stderr,">ERROR: log cache date, line %d unspported.\n",tmp); 
 							logCache[st].udate=0; next=1; nls--; continue; }
 						//--debug:ctime(&logCache[st].udate)
-						if (debug>3) printf(">%d date numbers. month=%d day=%d year=%d\n",
+						if (debug>3) printf(">%ld date numbers. month=%d day=%d year=%d\n",
 							ret,logD.tm_mon,logD.tm_mday,logD.tm_year);	
 					 } 
 					 else { fprintf(stderr,">ERROR: no valid log cache date.\n"); } //,resulTmp
@@ -2397,17 +2402,17 @@ static void jsonOut(char action[], int cr, RamObj *ram0, int ce, RamObj *eprom0)
 			} else if (ram0[ii].typ == 's') { //
 				snprintf(buf, sizeof(buf), "\"value\":\"%s\"", escapeStr("json",ram0[ii].value.sv));
 			} else if (ram0[ii].typ == 'f') {  
-				if (raw) snprintf(buf, sizeof(buf), "\"value\":%d", ram0[ii].basev); //raw 
+				if (raw) snprintf(buf, sizeof(buf), "\"value\":%hu", ram0[ii].basev); //raw 
 				else snprintf(buf, sizeof(buf), "\"value\":%f", ram0[ii].value.fv);
 			} else { snprintf(buf, sizeof(buf), "\"value\":%d", ram0[ii].value.dv); }
 			//--Output ---------------------------------------------------------------:
-			if (strcmp(action,"logs")==0) { //--array of data:   
+			if (strcmp(action,"logs")==0) { //--array of data:   !!save raw always!! "raw":%hu
 				snprintf(jsontxt, sizeof(jsontxt), 
-					"%s{\"key\":%d,\"hexkey\":\"0x%04X\",\"unit\":\"%s\",\"string\":\"%s\",%s,\"type\":\"%c\"}",
-					(ii>0?",":""),ram0[ii].hexa,ram0[ii].hexa, ram0[ii].unit, escapeStr("json",ram0[ii].string), buf, ram0[ii].typ );
+					"%s{\"key\":%d,\"hexkey\":\"0x%04X\",\"unit\":\"%s\",\"string\":\"%s\",%s,\"type\":\"%c\",\"raw\":%hu}",
+					(ii>0?",":""),ram0[ii].hexa,ram0[ii].hexa, ram0[ii].unit, escapeStr("json",ram0[ii].string), buf, ram0[ii].typ, ram0[ii].basev );
 			} else { //--keyed data: --polling, settings--  skip combine HIs?
-				snprintf(jsontxt, sizeof(jsontxt), ",\"0x%04X\":{\"unit\":\"%s\",\"string\":\"%s\",%s,\"type\":\"%c\"}",
-					ram0[ii].hexa, ram0[ii].unit, escapeStr("json",ram0[ii].string), buf, ram0[ii].typ );
+				snprintf(jsontxt, sizeof(jsontxt), ",\"0x%04X\":{\"unit\":\"%s\",\"string\":\"%s\",%s,\"type\":\"%c\",\"raw\":%hu}",
+					ram0[ii].hexa, ram0[ii].unit, escapeStr("json",ram0[ii].string), buf, ram0[ii].typ, ram0[ii].basev );
 			}
 			//--Write data:
 			writeFile (f_act, c_time, jsontxt);
@@ -2431,9 +2436,9 @@ static void jsonOut(char action[], int cr, RamObj *ram0, int ce, RamObj *eprom0)
 			} else { snprintf(buf, sizeof(buf), "\"value\":%d", eprom0[ii].value.dv); }
 			//--Write json: --settings--
 			snprintf(jsontxt, sizeof(jsontxt), 
-				",\"0x%04X\":{\"unit\":\"%s\",\"string\":\"%s\",%s,\"updated\":%d,\"type\":\"%c\"}",
+				",\"0x%04X\":{\"unit\":\"%s\",\"string\":\"%s\",%s,\"updated\":%d,\"type\":\"%c\",\"raw\":%hu}",
 				eprom0[ii].hexa, eprom0[ii].unit, escapeStr("json",eprom0[ii].string), buf,
-				eprom0[ii].updated, eprom0[ii].typ);
+				eprom0[ii].updated, eprom0[ii].typ, eprom0[ii].basev);
 			//-
 			writeFile (f_act, c_time, jsontxt); 
 	}	}
@@ -2444,7 +2449,7 @@ static void jsonOut(char action[], int cr, RamObj *ram0, int ce, RamObj *eprom0)
 static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[]) {
 	//--Output: 0,1,2==save values, >3=>stdout, raw? float16:float;
 	//---doo==null if debug && !new : prints to stdout.
-	FILE *fp; char file[128]=""; char bu[64]; char buf[255]; short foo=0;
+	FILE *fp; char file[128]=""; char bu[64]; char buf[255]; char foo=0;
 	//--Date: passing ctime_s instead of recreating here...
 	
 	//--Open Output:-------------------------------------------:
@@ -2474,15 +2479,17 @@ static short createProfile(char doo[], int nume, RamObj *eprom0, char ctime_s[])
 	fflush(fp);
 	for (int ii=0; ii < nume; ii++) { //print each line:--------------------------%hu
 		if (eprom0[ii].hexa > 0xE038) continue; //--skip last read only registers
-		strncpy(eprom0[ii].string, strReplace(","," ",eprom0[ii].string), 255); //-escape string
+		strncpy(eprom0[ii].string, strReplace(","," ",eprom0[ii].string), (size_t)255); //-escape string
 		char str[16]; //--Values to strings, clean for output...
 		
 		//--? Which eeprom value is being used? [current==.basev or builtin==(.f_def)] //(strcmp(profile,"new")==0) 
 		uint16_t tmp = eprom0[ii].basev; //just use .basev for both!
 		//--convert to output string:
-		if (strcmp(eprom0[ii].calc,"f16") == 0 && !raw) {  snprintf(str,(size_t)16,"%f,",F16ConvertToF32(tmp)); 
+		if (strcmp(eprom0[ii].calc,"f16") == 0 && !raw) {  
+			if (tmp==65506) { snprintf(str,(size_t)16,"%hu,",tmp); } //-:NAN/NULL
+			else snprintf(str,(size_t)16,"%f,",F16ConvertToF32(tmp)); 
 			strcpy(str,strReplace(".000000,",".00,\t",str)); //++trim trailing 0's if all 0's!!
-			strcpy(str,strReplace("nan,","nan, \t",str)); 
+			strcpy(str,strReplace("nan,","nan, \t",str)); 			//-:nan backup.
 		} else {  snprintf(str,(size_t)16,"%hu,\t",tmp); } 
 		//--Print Profile Template: str==value   . user profiles disabled, backup profiles enabled, by default.
 		fprintf(fp,"%s0x%04X, %s \t[%s] %s\n", ((foo==1)?"#":""), (int) eprom0[ii].hexa, str, eprom0[ii].unit, eprom0[ii].string); 
@@ -2507,7 +2514,7 @@ const char* chkProfile(char doo, char* profileName) {
 	//--Read from file:
 	fpp = fopen (prof, "r"); //b 
 	if (fpp)  {
-		char str[128]=""; int tmp=0; int st=0;
+		char str[128]=""; ushort tmp=0; int st=0;
 		//----Require and skip first cvs def line..  error if not present.
 		if( strncmp(fgets(str,127,fpp),cvsH,strlen(cvsH)-2)!=0 ) { fprintf(stderr,">ERROR with settings file!\n"); exit(1);  }
 		//--Loop profile lines:----------------------------------------------------------:
@@ -2544,11 +2551,16 @@ const char* chkProfile(char doo, char* profileName) {
 			token = strtok(NULL, ",\n"); 	//--Profile register data Value:
 			//--trim whitespace,etc... && ! isspace((unsigned int)token[0])
 			if (token) { trimP(token); result=strlen(token); }
-			else {result = 0; }  if (!result) { fprintf(stderr,">ERROR no value for register [0x%04X]\n",eeprom); 
-				continue; } //--skip if nothing, warn or error. 
-			//--Profile: Assign eeprom values:
+			else {result = 0; }  
+			//--warn/error if nothing or nan: 
+			if (!result || strspn(token,"-1234567890.")!=strlen(token)) { 
+				//fprintf(stderr,">ERROR! > no numeric value for profile register [0x%04X] !\n",eeprom); 
+				profileIn[st].hexa = eeprom; strncpy(profileIn[st].sv, "nan", (size_t)16); st++;tmp++; continue; }//!
+			else { 
+				//--Profile: Assign eeprom values:
 				profileIn[st].hexa = eeprom; 
-				strncpy(profileIn[st].sv, token, (size_t)16); //-:save value (...as string for now...)!!!!!
+				strncpy(profileIn[st].sv, token, (size_t)16); //-:save value (...as string for now...)
+			}
 				if (debug>3) printf("->[%s]\t", token); //
 			//--//--THIRD 		------------------------------------------:
 			token = strtok(NULL, ",\n"); 
@@ -2573,19 +2585,30 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 	//--Globals: profileIn[pi]; 	Not Global (yet): eprom[ep]; 
 	//---if (update) eprom[ep].f_new (uint16_t) == profileIn[pi].value.fv (default) || eprom[ep].f_def (if builtins?)
 	//---else printing profile: eprom[ep].basev == EEPROM .basev || eprom[ep].f_def
-	char skip = 0; char non = -1;
+	char skip = 0; signed char non = -1; 
 	
 	//--warn/error on overflow:
 	if (profileIn[pi].value.fv > 65535) { //skip=1;
-		fprintf(stderr," 0x%04X [ %s ] !WARNING! new value is not supported!\n",profileIn[pi].hexa,profileIn[pi].sv);
+		fprintf(stderr," 0x%04X > [ %s ] [%f] !WARNING! new value is not supported!\n\n",
+					profileIn[pi].hexa,profileIn[pi].sv,profileIn[pi].value.fv);
 		return non; //!
 	}
+	//--propagate compiled default for errors/filtering:	
+	if (strcmp(action,"defaults")==0){ snprintf(profileIn[pi].sv,sizeof(profileIn[pi].sv),"%f",profileIn[pi].value.fv); 
+		//--stray builtin floats: 
+		if (strcmp(eprom[ep].calc,"f16")!=0) { 
+			strncpy(profileIn[pi].sv ,strReplace(".000000","",profileIn[pi].sv), (size_t)16);
+			//float ft=0; //ft = profileIn[pi].value.fv - floor(profileIn[pi].value.fv); //alt
+			//printf(">Debug Builtins: [f] %s\n",profileIn[pi].sv); //,ft
+	}	}	
+	
 	//---Convert Update Values: -------------------------------------------------:
 	if (strcmp(eprom[ep].calc,"f16")==0) { //--CONVERT TO F16! (volts,amps,temp-comp)
 		//---f16:--: labled & very high number: must be f16.
 		if (profileIn[pi].value.fv > 400) {  //-f16 input
 			profileIn[pi].basev = (uint16_t) profileIn[pi].value.fv; //!
 			profileIn[pi].value.fv = F16ConvertToF32(profileIn[pi].basev);
+			if (isnan(profileIn[pi].value.fv)!=0) {profileIn[pi].value.fv = 65506;} //check for nan
 		} //--zero:
 		else if (profileIn[pi].value.fv==0) { eprom[ep].f_new = 0; } 
 		else  { //---float:--: needs converting:  
@@ -2599,50 +2622,64 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 		} //  */
 		
 		/* /-/--Last F16 Checks, Assign .f_new:-----------------------------:  error on NaN  */
-		//-:temp comp - check if in range...???
+		//--temp comp: - check if in range...???
 		if (eprom[ep].hexa == 0xE01A) {
 			if (profileIn[pi].value.fv < -1 || profileIn[pi].value.fv > 0) { 
-				skip=1; fprintf(stderr," 0x%04X = %s %s !WARNING! new compensation value [ %f ] is not supported!\n", 
+				skip=1; fprintf(stderr," 0x%04X > [ %s ] %s !WARNING! new compensation value [ %f ] is not supported!\n", 
 					profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,profileIn[pi].value.fv);  }
-		/*/--Specials: fraction [+mcPT: load Ohm 0...1, +both: fixed vmp pct 0.0...0.99] [f16 15360==1]  */
+		//--Specials: fraction [+mcPT: load Ohm 0...1, +both: fixed vmp pct 0.0...0.99] [f16 15360==1]  */
 		} else if (profileIn[pi].hexa==0xE026 || profileIn[pi].hexa==0xE037) {
 			if (profileIn[pi].value.fv!=0 && (profileIn[pi].value.fv<0 || profileIn[pi].value.fv>0.99)) {  
-				skip=1;	fprintf(stderr," 0x%04X = [ %s ] [%hu] !WARNING! new value is unsupported!\n", 
+				skip=1;	fprintf(stderr," 0x%04X > [ %s ] [%hu] !WARNING! new value is unsupported!\n", 
 								profileIn[pi].hexa,profileIn[pi].sv,profileIn[pi].basev);  }
-		//--Voltage safety check?--  [18700==10.09]    //ranges: 10...30 or 0 (multiply by battery multiplier?)
-		} else if ( strcmp(eprom[ep].unit,"v")==0 //&& profileIn[pi].value.fv != 0	//--:min & max check   != 0xE01A
+		//--Voltage safety check--  [18700==10.09]    
+		} else if ( strcmp(eprom[ep].unit,"v")==0 //--:min & max check   != 0xE01A
 				&& ((minV && profileIn[pi].value.fv < minV) || (maxV && profileIn[pi].value.fv > maxV)) ) { 
-			//--Maxmax: HVD:  			,... 		???????!!!!!!!!!!!!!!!!!!hack!
-			if (eprom[ep].hexa == 0xE01B && (maxV && profileIn[pi].value.fv < (maxV+1))) { skip=0; }
-			//--:Allowable 0 voltages: -- Turning OFF==0 voltage.   ...or allow all to be zero?
-			else if (profileIn[pi].value.fv==0 && (eprom[ep].hexa==0xE001 || eprom[ep].hexa==0xE007 || eprom[ep].hexa==0xE010 || eprom[ep].hexa==0xE01D || eprom[ep].hexa==0xE033 || eprom[ep].hexa==0xE036)) {skip=0;} 
+			//--Maxmax: HVD:  extra allowance?!?
+			//if (eprom[ep].hexa == 0xE01B && (maxV && profileIn[pi].value.fv < (maxV+0.5))) { skip=0; } //??
+			//--:Allowable 0 voltages: -- (Turning OFF==0)   ...or allow any to be zero?
+			if (profileIn[pi].value.fv==0 && (eprom[ep].hexa==0xE001 || eprom[ep].hexa==0xE007 
+				|| eprom[ep].hexa==0xE010 || eprom[ep].hexa==0xE01B || eprom[ep].hexa==0xE01D || eprom[ep].hexa==0xE024 
+				|| eprom[ep].hexa==0xE033 || eprom[ep].hexa==0xE036)) {skip=0;} 
 			else { skip=1; 
-				fprintf(stderr," 0x%04X = [ %s ] !WARNING! new voltage is very low or very high\n"
+				fprintf(stderr," 0x%04X > [ %s ] !WARNING! new voltage is very low or very high\n"
 									"\t\t voltages must be between %.2f and %.2f !\n", //  [%f! == %hu]
-						profileIn[pi].hexa,profileIn[pi].sv,minV,maxV); }//, profileIn[pi].value.fv, profileIn[pi].basev
-		//--Scaling/Ranges: celcius ()------------------------------------------:  //NULL is ok???
+						profileIn[pi].hexa,profileIn[pi].sv,minV,maxV); }
+		//--Min/Max Ranges: celcius ()------------------------------------------:  
+		} else if ( eprom[ep].hexa==0xE01F && profileIn[pi].basev==65506 ) 	{ skip=0; //-:NULL/NAN OK!!! 
 		} else if ( strcmp(eprom[ep].unit,"C") == 0 && (profileIn[pi].value.fv < -128 || profileIn[pi].value.fv > 127) ) { 
-			skip=1; fprintf(stderr," 0x%04X = %s %s !WARNING! new temperature [ %f ] is not supported!\n", 
-					profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,profileIn[pi].value.fv); 
-		//--Other floats: [15360==1] higher probably?... 
-		} else if (profileIn[pi].value.fv!=0 && profileIn[pi].basev < 15360) {
-			skip=1;	fprintf(stderr," 0x%04X = [ %s ] [%hu] !WARNING! new value is very low!\n", 
-								profileIn[pi].hexa,profileIn[pi].sv,profileIn[pi].basev);
-		//--Set update value!:--------------------------------: f_new == uint16_t!!!
-		} else if (profileIn[pi].value.fv==0) { skip=1; }  //!-:set above.
-		//--
-		if (!skip) { eprom[ep].f_new = profileIn[pi].basev;   }
-		//* -- NULL F16s? ..some are allowed..   // *
+			skip=1; fprintf(stderr," 0x%04X > [ %s ] %s !WARNING! new temperature is not supported!\n", 
+					profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit); // [ %f ],profileIn[pi].value.fv
+		//--Min/Max	Ranges: Amps ()---------------------------------------------:
+		} else if (strcmp(eprom[ep].unit,"A") == 0 && (profileIn[pi].value.fv<0 || profileIn[pi].value.fv>40)) {
+			skip=1; fprintf(stderr," 0x%04X > [ %s ] %s !!WARNING! new Amp value is not supported!\n", 
+					profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit);
+		//--:Allowable 0 values: celcius, Amps------------------------------------------:  
+		} else if (profileIn[pi].value.fv==0 && (strcmp(eprom[ep].unit,"C") == 0 || strcmp(eprom[ep].unit,"A") == 0)) { 
+			//if (eprom[ep].hexa==0xE013 || eprom[ep].hexa==0xE01E || eprom[ep].hexa==0xE01F || eprom[ep].hexa==0xE020 || eprom[ep].hexa==0xE021 || eprom[ep].hexa==0xE038){ //  THISISALLOFTHEM!
+				skip=0;
+			/*} else { 	skip=1; fprintf(stderr," 0x%04X > [ %s ] %s !!WARNING! new value [ %f ] is not supported!\n", 
+					profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,profileIn[pi].value.fv); } // */
+		//--Everything should be "valid" from here on...
+		/*/--Last [Debug] float filter: ...neg C,A collect here.
+		} else if (profileIn[pi].value.fv<1) { //[15360==1]?...
+			skip=1;	fprintf(stderr," 0x%04X > [ %s ] [%hu] !WARNING! new value is very ...! TEST FILTER!!!!!!!\n", 
+								profileIn[pi].hexa,profileIn[pi].sv,profileIn[pi].basev); // */
+		} //if (!skip) { printf("->Filter OK: 0x%04X\n", eprom[ep].hexa);  }
+		//----------------------------------------------------
+		//--Set valid (non-zero) update values!:-------------------: //!-:valid 0s set above!! 
+		if (!skip && profileIn[pi].value.fv!=0) { eprom[ep].f_new = profileIn[pi].basev;   }
+		//* f_new == uint16_t!!! -- NULL F16s? ..some are allowed..   // *
 	} 
 	
 	//--Float input error: stray floats?? ---------------------------------------:
-	else if (strcspn(profileIn[pi].sv, ".") < strlen(profileIn[pi].sv)){ skip=1; 
-		fprintf(stderr," 0x%04X [ %s ] !WARNING! Unexpected Float Value!\n",profileIn[pi].hexa,profileIn[pi].sv); }
+	else if (strcspn(profileIn[pi].sv, ".") < strlen(profileIn[pi].sv)){ skip=1; //! || ft>0
+		fprintf(stderr," 0x%04X > [ %s ] !WARNING! Unexpected Float Value!\n",profileIn[pi].hexa,profileIn[pi].sv); }
 	//--Normal Numbers: (secs,mins,days, ) ------------------------:
 	else { 
 		if (profileIn[pi].value.fv<0) {
-			fprintf(stderr," 0x%04X [ %s ] !WARNING! Unsupported Value!!\n",profileIn[pi].hexa,profileIn[pi].sv); 
-			return non; //!!!!!!!!!!!!
+			fprintf(stderr," 0x%04X > [ %s ] !WARNING! Unsupported Value!!\n",profileIn[pi].hexa,profileIn[pi].sv); 
+			return non; //!
 		} else { //--Assign update value:----------------------------------------------------: //
 			eprom[ep].f_new = (uint16_t) profileIn[pi].value.fv; }
 			//profileIn[pi].basev = (uint16_t) profileIn[pi].value.fv;  } //(uint16_t): max==65535
@@ -2650,34 +2687,36 @@ static char parseProfileValue(char action[], int pi, int ep, RamObj *eprom) {
 		/* /-/----Last nonF16 Filter/s: .f_new holds update value here on.. ------------------- / */ 
 		//--Check for null uint16_t: --.calc F16 can have but not these (probably)--
 		if (eprom[ep].f_new == 65506) { skip=1;
-			fprintf(stderr," 0x%04X = %s %s !WARNING! new value [ %hu ] null is not supported!\n", 
+			fprintf(stderr," 0x%04X > [ %s ] %s !WARNING! new value [ %hu ] null is not supported!\n", 
 					profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit, eprom[ep].f_new); 
+		
 		//--Days / time: 
-		} else if ( strcmp(eprom[ep].unit,"days")==0 && (eprom[ep].f_new > 255) ) { //profileIn[pi].value.fv  < 0 || 
-			skip=1; fprintf(stderr," 0x%04X = %s %s !WARNINGS! new time [ %d ] is not supported!\n", 
+		} else if ( strcmp(eprom[ep].unit,"days")==0 && (eprom[ep].f_new > 255) ) { 
+			skip=1; fprintf(stderr," 0x%04X > [ %s ] %s !WARNING! new time is not supported! [ %d ]\n", 
 						profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,(int)profileIn[pi].value.fv); //%hu
-		/* /--time: both checks on profileIn[pi].value.fv done already! (.f_new > 65535 || .fv < 0) skip:
-		} else if ((strcmp(eprom[ep].unit,"secs")==0 || strcmp(eprom[ep].unit,"mins")==0) && ) { skip=1; } */
+		/* /--time: both checks on profileIn[pi].value.fv done already! (.f_new > 65535 || .fv < 0) skip.
+		//--Disallow 0 values for...: ?
+		} else if ((strcmp(eprom[ep].unit,"secs")==0 || strcmp(eprom[ep].unit,"mins")==0) && .fv==0) { skip=1; } */
 		//--Misc Settings:
+		} else if (eprom[ep].hexa==0xE00D && (eprom[ep].f_new != 0 && eprom[ep].f_new != 1 && eprom[ep].f_new != 0xFFFF)) { skip=1; fprintf(stderr," 0x%04X > [ %s ] %s !WARNING! new value [ %d ] is not supported!\n",  	  	//alarm mode
+						profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,(int)profileIn[pi].value.fv); 
 		} else if ( eprom[ep].hexa==0xE034 && (profileIn[pi].value.fv  < 1 || eprom[ep].f_new > 247) ) {  //modbus id
-			skip=1; fprintf(stderr," 0x%04X = %s %s !WARNINGS! new id [ %d ] is not supported!\n", 
-						profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,(int)profileIn[pi].value.fv); //%hu
+			skip=1; fprintf(stderr," 0x%04X > [ %s ] %s !WARNING! new id [ %d ] is not supported!\n", 
+						profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,(int)profileIn[pi].value.fv); 
 		} else if ( eprom[ep].hexa==0xE035 && (profileIn[pi].value.fv  < 1 || eprom[ep].f_new > 15) ) { //meterbus id
-			skip=1; fprintf(stderr," 0x%04X = %s %s !WARNINGS! new id [ %d ] is not supported!\n", 
+			skip=1; fprintf(stderr," 0x%04X > [ %s ] %s !WARNING! new id [ %d ] is not supported!\n", 
 						profileIn[pi].hexa,profileIn[pi].sv,eprom[ep].unit,(int)profileIn[pi].value.fv); //%hu
 		}
-		//--zero out...
-		if (skip) eprom[ep].f_new = 0;
 	}
 	fflush(stderr);
-	//--one more check for null F16: if (eprom[ep].f_new == 65506 && eprom[ep].hexa!=)?...
-	if (skip) return non;
+	//--Return:
+	if (skip) {eprom[ep].f_new=0; return non; }
 	else { return 1; }  //eprom[ep].updating = 1; //-:mark in struct
 } 
 
 /* #---Main Parse Data Loop: --------------------------------------------------------# */
 const RamObj parseValue (RamObj *inStruct, uint16_t dvalue) {  
-	//--------------Convert data values to correct output type------------------:const 
+	//--------------Convert data values to correct output type inplace------------------:const 
 	//OUT: back into original struct w/->> correct (converted) value & type assigned
 	RamObj outStruct = *inStruct;	//copy?
 	//--do any calculations or combines?:   combined:modbus_get_float_abcd();
@@ -2685,11 +2724,12 @@ const RamObj parseValue (RamObj *inStruct, uint16_t dvalue) {
 	//if (inStruct.updated) {int updated = inStruct.updated;} 
 	
 	/* ----------------------------Unit Sorting------------------------------------- */
-	//-//-Convert-Float:---------------------------------------------------: //0=65535
+	//-//-Convert-Float:---------------------------------------------------: 
 	if (strcmp(inStruct->calc,"f16") == 0) { outStruct.typ ='f';  
-		//--v,amps,C,etc.. *MOST!-----------------: Fudges non-F16 numbers!!!  //%hu - uint16_t
+		//--v,amps,C,etc.. *MOST!-------------------: 
 		outStruct.value.fv = F16ConvertToF32(dvalue); 
-		if (dvalue == 65535 || !outStruct.value.fv) outStruct.value.fv = 0.0;  //--zero? nan??
+		if (isnan(outStruct.value.fv)!=0) { outStruct.value.fv=65506; } 		//--nan/offNull  
+		if (dvalue == 65535 || !outStruct.value.fv) outStruct.value.fv = 0.0;  //--zero/emptyNull (nan)
 		/*/--Scaling modifications: (n*0.1)  ,  
 		if (strncmp(outStruct.calc,"comb=n*",7)==0) { //--//0x002A,B? no. !Not used for f16!?!
 				outStruct.value.fv = outStruct.value.fv * 0.1; } // */
@@ -2734,19 +2774,20 @@ const RamObj parseValue (RamObj *inStruct, uint16_t dvalue) {
 }
 
 //--Get Specific register/mem structure array index:-------------------:
-int getIndex(int hex, size_t total, RamObj *inStruct) {
+short getIndex(int hex, size_t total, RamObj *inStruct) {
 	//--iterate struct:
 	for (short i=0; i < total; i++) {
 		if (hex == inStruct[i].hexa) return i; //-
 	}
-	return -1;
+	fprintf(stderr,"\n>Error getting index.\n\n"); exit(1); 
+	//exit(EXIT_FAILURE);  return -1; ///just exit with ERROR! probably.. 
 }
-int getCoil(int hex, size_t total, struct CoilsObj *inStruct) {
+short getCoil(int hex, size_t total, struct CoilsObj *inStruct) {
 	//--iterate struct:
 	for (short i=0; i < total; i++) {
 		if (hex == inStruct[i].hexa) return i; //-
 	}
-	return -1;
+	fprintf(stderr,">Error unknown coil index.\n\n"); exit(1);
 }
 
 //--Combine double mem address items:--(previous data must already be parsed):
@@ -2759,9 +2800,9 @@ __signed long should be big enough!__ (even though neg. is not used [except for 
 	 signed	int Max:  2147483647 / 24 / 365 = 245,146.53 years
 	 signed	long Max: 9223372036854775807 (9.2233720368547758e18) / 24 / 365 = 1052896351239130 years
 */
-	long ret; int hi;
+	long ret; uint16_t hi;
 	//--Paired mem register:
-	int ii = getIndex((hex-1),num,ramIn); if (ii == -1) return -1; //--------------!!!!!!!!!! 
+	short ii = getIndex((hex-1),num,ramIn); //! 
 	//--Correct HI LO : (called with 2nd value)-----------:
 	char tmp[8] = ""; snprintf(tmp, 8, "0x%04X", hex); //4 --Check hexadecimal
 	//--Order paired data correctly:
@@ -2801,7 +2842,7 @@ const float secsToHours(int num) {
 	float x = (num/60.0)/60.0;   //hrs
 	return x;
 }
-//--//--format strings for text in other funcs, escape here befor output:
+//--//--format strings for text in other funcs, escape here before output:
 static char* escapeStr(const char* doo, char* string) {
 	char *nStr = ""; //= string; //?size needs to be gt orig!
 	//char nl[], tb[]; //filter: if (strspn(token,"1234567890-")==strlen(token))
@@ -2876,7 +2917,7 @@ static char* strReplace(const char* search, const char *replace, const char* str
 }
 
 void trimP (char *str) { 
-	//--trim in place: 
+	//--trim in place: uints?
 	int i; int begin = 0; 
 	int end = strlen(str) - 1;
 	//--end & beginning:

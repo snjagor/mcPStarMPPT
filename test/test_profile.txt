@@ -1,0 +1,41 @@
+Register,new value,description,
+#--first line MUST be exactly as above! (last comma opt.)
+//Ms ProStar MPPT Charger Settings:------------:[backup]
+//Sun Feb 18 2024 19:09:00
+0xE000, 18.5,	 	[v] absorb v 			!Over V test
+0xE001, 19136,	 	[v] float v @ 25C
+0xE002, 300.6,	 	[secs] absorb time 		!Unexpected float
+0xE003, 21600,	 	[secs] low bat. extra absorb time
+0xE004, 19011,	 	[v] trigger extra absorb
+0xE005, 0,	 	[v] skip float 			!Zero V test
+0xE006, 1800,	 	[secs] exit float if time below v
+0xE007, 19410,	 	[v] EQ voltage @ 25C
+0xE008, 256,	 	[days] days b/t EQ		!bad days
+0xE009, 7200,	 	[secs] EQ time-out limit @ > bulk  < EQv
+0xE00A, 65506,	 	[secs] EQ time limit: @ EQv	!!Bad Null
+0xE00D, 0,	 	[x] Alarm on changes
+0xE010, 65506,	 	[v] Ref.reg Max Charge Vout limit 	!!Bad Null V
+0xE013, 0,	 	[A] Charger max Amps limit **
+0xE01A, 42926,	 	[v] temp comp. (12V lead-acid ~ -0.03 V/C)
+0xE01B, ,	 	[v] HVD 				!empty
+0xE01C, 19174,	 	[v] HVR
+0xE01D, 0,	 	[v] Abs. uncomp. Max Charge Vout limit
+0xE01E, nan,	 	[C] max comp. temp clamp 	!Nan test
+0xE01F, 65534,	 	[C] min comp. temp clamp ** 	!!overnull
+0xE020, -0.56,	 	[C] ETb_lo_limit_100 		!Neg.
+0xE021, -20.0,	 	[C] low temp. limit_0 cutoff **
+0xE022, 0.0,	 	[v] LVD * 			!Zero Low-test
+0xE023, 19021,	 	[v] LVR
+0xE024, 0,	 	[v] Load HVD *
+0xE025, 19264,	 	[v] Load HVR
+0xE026, 9134,	 	[x] LVD Load current comp. (ohms)
+0xE027, ,	 	[mins] LVD warning timeout 	!Empty nonV test
+0xE030, 19130,	 	[v] LED ChargingBulk G->G/Y
+0xE031, 19028,	 	[v] LED ChargingFull G/Y->Y
+0xE032, 18983,	 	[v] LED Charging Y->Y/R 
+0xE033, 65505,	 	[v] LED Charging Y/R->R 		!Null V test
+0xE034, 1,	 	[x] Modbus net ids
+0xE035, 31,	 	[x] Meterbus net ids		!Bad id
+0xE036, 0,	 	[v] Fixed Vmp
+0xE037, 0,	 	[x] Vmp fraction of Voc
+0xE038, -.5601,	 	[A] Charge current limit ** 	!!low-test

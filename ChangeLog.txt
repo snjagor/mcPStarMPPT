@@ -1,10 +1,19 @@
 1.02
  - Display: daily absorb, float times can be hours or mins
  - Display: voltages are multiplied for 24v, +small display changes
+ - Display: eeprom cmd prints header by default now
  - Logs: prefer earlier logcache date as base
- - Logs: increased normalization of logcache dates
  - Logs: fixed possible skipping of logs at end of log block
+ - Logs: cached date normalization bugfix, increased normalization
+ - Logs: switch buffer if break in logDate hours
  - Profiles: backups are not commented out anymore
+ - Profiles: allowable zero values for Celsius and Amp values
+ - Profiles: input error/nan checking
+ - json: raw values always included
+ - Profiles: compiled absolute minimum voltage allowed w/fallback settings
+ - General: 18v is absolute max voltage allowed (24v systems are auto multiplied)
+ - general code cleanup..
+ - Added Test dir & test profile
  
 1.01+hotfixes
  - Fix: Absorb voltage was filtered out when reading profile

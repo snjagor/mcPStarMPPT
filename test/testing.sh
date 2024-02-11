@@ -1,7 +1,8 @@
 #!/bin/bash
-buff=0;
-togB="";
-#--possible inputs: logs:hrmtr,start addr. profiles:testing. 
+buff=0;		#:input for buffer test
+togB=""; 	#:not used
+#--possible future inputs: logs:hrmtr,start addr.  
+#--output into test-file run as: bash testing.sh &>./tests_file.txt
 while [ -n "$1" ]; do
 	if [ "$1" = "-b" ]; then 
 		togB=""; #"-b"; Off !  (unused opt)
@@ -53,7 +54,7 @@ cmd="$cmd0 logs 2 days 1";
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 #---custom buffer:
 cmd="$cmd0 logs 2 days 1 -b 24"; 
-echo "##---cmd: $cmd ###################"; echo "###---:dates should be 24hrs off above..."; 
+echo "##---cmd: $cmd ###################"; echo "###---:dates should be 24hrs before..."; 
 $cmd; echo;echo;echo;echo; #-
 
 cmd="$cmd0 debug logs 3 days 2"; 
@@ -87,7 +88,16 @@ echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 perl -i -pe 'if (14..14) {s/^\#//i;}' ./profiles/new_profile.txt
 cmd="$cmd0 profile validate new"; #testing
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
-##--update:... 
+##
+#--Test Profile:
+if [ ! -e "./profiles/test_profile.txt" ]; then
+	cp ./test/test_profile.txt ./profiles/test_profile.txt
+	cmd="$cmd0 debug profile validate test"; 
+	echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
+	rm ./profiles/test_profile.txt
+else 
+	echo; echo '........Skipping test profile.........'; echo;echo;echo;echo; #-
+fi;
 
 ##--coils: +EQ test
 cmd="$cmd0 reset_charge"; 

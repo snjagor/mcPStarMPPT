@@ -148,6 +148,8 @@ mcPStarMPPT update 		- (if a default profile is enabled.)
 
 ## Known Bugs
 
+'days since EQ' eeprom register read not working..
+
 ### LogCache
 
 For exactness, manually added logcache dates should be in sync with their related hourmeters so that they reflect similar times. Otherwise unexpected time gaps can be introduced when dating logs. If the manually added date is for a particular log, then use the log's hourmeter and create a timestamp for the evening of the desired day. Another way is to take a previous or later logcache time and add/subtract the same amount of time to/from the hourmeter and timestamp to get new ones. (ie. -40hrs to later hourmeter & -144000 seconds to later timestamp) Remember all manually added lines MUST be inserted in numerical hourmeter order to be recognized.
