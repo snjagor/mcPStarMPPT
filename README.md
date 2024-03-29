@@ -1,7 +1,11 @@
 mcPStarMPPT 
 ===========
 
-### an opensource app for controlling ProStarMPPT* solar charge controllers
+## An opensource app for controlling ProStarMPPT* solar charge controllers
+
+This program is created for interacting with your solar charge controller from a terminal application on OSX or Linux (including RaspberryPi). (MS Windows may work as well, but thats up to you..)
+
+With this release (v1.02) everything is in basic working order. This release fixes: some semi-critical profile/update bugs for allowable zero values & input error checking, missing logs, and json output additions. See the ChangeLog for more info.
 
 ## Requirements
 
@@ -23,7 +27,7 @@ solar charger. (ie. Morningstar USB MeterBus Adapter)
 ## Installing
 
 Once built, connect to your solar charger using the appropriate connector, open a shell terminal,
-and run the program.
+and run the program. All commands and interaction is done from your [cli](https://en.wikipedia.org/wiki/Command-line_interface) terminal.
 
 Once built you can use the program's `convert` command utility to create charge profiles if needed.
 
@@ -56,11 +60,13 @@ ie. `mcPStarMPPT_L16-array`, etc...
 ## Documentation
 
 Before changing any settings on your charger its a good idea to make backup settings files of 
-the various charger default modes. Use the arguments 'profile backup' to do so for each of the seven
-programmed dip switch modes, and rename the backup files to correspond to the documented modes so you 
-can use them in the future. (Charger mode [8] for custom settings overwrites the charger's built in 
-defaults it seems.) (This is not required, only a suggestion. Atleast one backup should be made before 
-changing dip switches to custom mode so that common eeprom settings can be recorded.)
+the various charger default modes. Use the arguments 'profile backup' to do so [for each of the seven
+programmed dip switch modes] (manually editing each backup file may be needed), and rename the backup 
+files to correspond to the documented modes so you can use them in the future. 
+(Default settings for use in the official MorningstarCorp. app can be downloaded from their website)
+(Charger mode [8] for custom settings overwrites the charger's built in defaults it seems..) 
+(This is not required, only a suggestion. *Atleast one backup should be made before 
+changing dip switches to custom mode so that common eeprom settings can be recorded*.)
 
 *Please read all safety and documentation details for your battery system, or you risk damage to 
 yourself and/or the batteries.* This program has no way of knowing what values are correct beyond 
@@ -148,7 +154,8 @@ mcPStarMPPT update 		- (if a default profile is enabled.)
 
 ## Known Bugs
 
-'days since EQ' eeprom register read not working..
+* 'days since EQ' [0xE04F] eeprom register read not working..
+* Display output spacing is based on [tab] being 8 spaces
 
 ### LogCache
 
@@ -177,6 +184,14 @@ Planned features for working on include:
 - [ ] easier ability to change language of display output
 - [ ] external settings configuration
 - [ ] optional [-s] silent mode for library-like returns
+
+
+## Json Keys
+
+(see mcpt_jsontohtml.pl script in test dir for help parsing json output.)
+
+### JSON Data Keys
+
 
 [source code]: https://github.com/snjagor/mcPStarMPPT
 [codeberg]: https://codeberg.org/snjagor/mcPStarMPPT

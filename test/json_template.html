@@ -1,0 +1,149 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head> 
+  <title>json to html</title>
+  <meta charset="UTF-8">
+  <meta name="creator" content="centerflowing.com">
+  <meta name="author" content="sunja">
+  <meta name="Description" content="">
+  <link rel="copyright" href="">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script type="text/javascript">
+//--set up globals-----------------------------------
+var jsfile = "%%file%%"; //:replace with file name ::perl input
+var List = new Array(); var dataArray = new Array();
+var ii=0; var mi=0; var maxLogs=3; var full=1;
+
+window.onload = init;
+function init () { 
+	//--get json data--------------
+	document.getElementById("file").innerHTML = jsfile;
+	//getJSON(jsfile);  //:data online server
+	parseIt(mcpstar);   //:data included in html. console.log(mcpstar);
+}
+
+function getJSON(page) { //:online
+	var request = new XMLHttpRequest();
+	request.open("GET", page);
+	request.onreadystatechange = function() { 
+		if (this.readyState === this.DONE && this.status === 200) {
+			if (this.responseText) {
+				    console.log("Status: "+this.statusText);
+				var retu = this.responseText; //!
+				//console.log("!:"+retu.length); 
+				//--parse & store: dataArray = eval("(" + retu + ")");
+				parseIt(retu);
+			 } else { console.log("Error: "+this.statusText); }
+		}
+	};	request.send();
+}
+
+//--parse JSON data--------------------------------------
+function parseIt(jsonData) { 
+	if (jsonData === null || jsonData.trim() === "") { return; }
+	dataArray = JSON.parse(jsonData); //:works  
+	//dataArray = JSON.parse(JSON.stringify(jsonData)); //:not
+	if (dataArray.length === 0) { console.log("Error:empty");
+		return; } 
+	var divBox = document.getElementById("data");
+	/*/--Loop---------------------------------------:*/
+	for (var k in dataArray) { 
+  		if (!dataArray.hasOwnProperty(k)) { console.log("no: "+k); continue; }
+  		var v = dataArray[k];
+		if (k==="logs") { ii=2;  var div = document.createElement("h2");
+			div.setAttribute("class", "logsT");	 div.innerHTML = "Logs: ["+dataArray[k].length+"]";
+			divBox.appendChild(div);
+		} 	//console.log(k+">>"+v); 
+		
+		if (isObject(v)) { //--pretty print object key, loop object:
+			if (k!=="logs"){ unwinde(1,"","<br>\n"); divBox.innerHTML+="["+k+"] =><br>"; }
+			loops(1,k,v); } 
+		else unwinde(1,k,v); //:data
+	} 
+}
+function unwinde (inset,dk,dv,clas) {  //if(mi>maxLogs) return;
+	//--display class: inset===1 if top lvl data:
+	clas = clas?clas:((inset===1 && dk)?"pdata":"");
+	var divBox = document.getElementById("data");
+    var div = document.createElement("div");
+	div.setAttribute("class", "drow"+(clas?" "+clas:""));
+	div.setAttribute("style", "margin-left:"+inset+"em;");
+	//--Content:
+	if (ii===4) { if (dk==="") {div.innerHTML="<span>|</span>";} //:log-data
+				else if (!full) div.innerHTML = " "+(dv!==""?dv:"''")+(dk==="value"?", ":": ");  
+				else div.innerHTML = "<span class=\"ki\">"+dk+"</span> => "+(dv!==""?dv:"''")+", ";
+	}
+	else if (dk==="" && ii!==2) {div.innerHTML="----------------------";} //+ii
+	else if (inset===1) div.innerHTML = "\n <h3>"+dk+"</h3>\n<div>"+dv+"</div>"; //:Main Info
+	else if (dk) div.innerHTML = " "+dk+" => "+dv+",<br>\n";
+	//--append info html--
+	divBox.appendChild(div);
+}
+function loops (ino,g,arr) { ino++; ino-=0.5; 
+	if (g==="meta"){ ii=3; mi++; } else if (g==="data") ii=4; if(mi>maxLogs) return 0;
+	if (typeof g !== 'number' && isNaN(g)) { //:Print object Keys, skip array indexes:
+		var divBox = document.getElementById("data"); var div = document.createElement("div");
+		//--inside log 'data'-array? inline:block
+		div.setAttribute("class", "drow"+((ii===4 && g!=="data")?" inline":" k2"));
+		div.setAttribute("style", "margin-left:"+ino+"em;");
+		//--sub array info:
+		if (g==="meta"){ div.innerHTML = "<hr>__Log:__<br>&cir; <span>"+g+"</span> => "; }
+		else div.innerHTML = "&cir; <span>"+g+"</span> => Array";
+		if (g==="logs") div.innerHTML += "({meta,data}, ...):"; else div.innerHTML += ":";
+		divBox.appendChild(div); //:append
+	}
+	for (var key in arr) { //:unwind object array:
+		if (!arr.hasOwnProperty(key)) { console.log("no: "+key); continue; }
+		var v = arr[key]; 
+		if(isObject(v)){ unwinde(ino,"","\n",(ii===4?" inline":"")); loops((ino),key,v);  }
+		else { //if (ii===4 && (key==="string"||key==="value")){unwinde(ino,key,v," inline");}
+			//else if (ii!==4) { //--full data:
+				unwinde(ino,key,v,(ii===4?" inline":"")); //}
+	}	}
+	return 1; }
+function isObject(value) { 
+	return (value !== null && (typeof value === 'object' || typeof value === 'function'));
+}
+
+</script>
+<style type="text/css" media="all">
+/* Set border-box as the global default */
+html { box-sizing: border-box; }
+/* Allow each element to override */
+*, *:before, *:after { box-sizing: inherit; }
+body { margin: 0px; } /* reset page border  */
+header, section, footer, aside, nav, main, article, figure {
+	display: block; } /* HTML5 compat */
+table { table-layout:auto; border-spacing: 0; border: none; }
+td { padding:0; } /* Default table */
+
+#page {margin:1em; max-width:90%; color:#333;}
+#file {}
+.logsT {border-bottom:.1em solid #aaa;}
+.drow.inline { display: inline-block;    margin: 0em;
+	margin-left: .5em !important; color: #ccc; font-family:monospace;
+} .drow.inline span { font-weight:bold; color:#d55; }
+.drow.inline span.ki { font-weight:normal; color:#da5; }
+
+.drow.pdata { display: inline-block;
+    border: 0.11em solid #666; border-radius: 0.4em;
+}
+.drow.pdata div { padding:0.5em; }
+.drow.k2 span { color: #f33; font-weight:bold; font-family:monospace; }
+.drow h3 {margin:.2em; border-bottom: 0.11em solid #633;}
+
+</style>
+</head><body> 
+&theta; θ &#952; <!-- utf8 test (all should be same) --><br>
+
+<div id="page"> 
+	<h2 id="file"> </h2>
+	<div id="data"> </div>
+	<div id="foot"> </div>
+</div>
+
+<script type="text/javascript">
+	var mcpstar=' %%json%% '; //:replace with json file data. ::perl-input
+</script>
+</body>
+</html>

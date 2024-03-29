@@ -1,19 +1,21 @@
 1.02
- - Display: daily absorb, float times can be hours or mins
+ - Display: daily absorb, float times can be hours or minutes
  - Display: voltages are multiplied for 24v, +small display changes
  - Display: eeprom cmd prints header by default now
- - Logs: prefer earlier logcache date as base
  - Logs: fixed possible skipping of logs at end of log block
- - Logs: cached date normalization bugfix, increased normalization
- - Logs: switch buffer if break in logDate hours
+ - Logs cache: prefer earlier logcache date as base
+ - Logs cache: cached date normalization bugfix, increased normalization
+ - Logs cache: switch buffer if break in hourmeter hours when unknown date
  - Profiles: backups are not commented out anymore
  - Profiles: allowable zero values for Celsius and Amp values
  - Profiles: input error/nan checking
  - json: raw values always included
+ - json: log-date-string key changed and calculation type added
+ - json: with '-s' argument, only json file name returned
  - Profiles: compiled absolute minimum voltage allowed w/fallback settings
  - General: 18v is absolute max voltage allowed (24v systems are auto multiplied)
  - general code cleanup..
- - Added Test dir & test profile
+ - Added Test dir, test profile, & json-to-html test
  
 1.01+hotfixes
  - Fix: Absorb voltage was filtered out when reading profile
