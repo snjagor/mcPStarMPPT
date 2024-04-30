@@ -1465,7 +1465,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			}
 			
 			/*/--Print Out:---------------------------------------------------------------//:sorting? */
-			if (debug>2 || raw) {  printf("\n>Log [%d]-----------------------:\n",a);  //:debug 
+			if (debug>2 || raw) {  printf(">Log [%d]-----------------------:\n",a);  //:debug 
 				printf("%s %s\n",(cdMarker==1?"Cached Date:":"Approximate Date:"),logs[a].date_s); 
 				if (cindex && timeSkipB>1){ snprintf(sbuf,sizeof(sbuf),"(date is within [%ld] hrs)",timeSkipB); }//-:buffer
 				printf(" (%.0f days ago)\t %s\n", daysago, (cindex && timeSkipB)?sbuf:""); 
