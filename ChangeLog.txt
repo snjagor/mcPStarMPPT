@@ -1,3 +1,6 @@
+1.03
+ - Logs: fix for correct dates for recent logs after charger has been turned off for a time 
+
 1.02
  - Display: daily absorb, float times can be hours or minutes
  - Display: voltages are multiplied for 24v, +small display changes

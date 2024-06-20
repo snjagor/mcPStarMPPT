@@ -1,5 +1,5 @@
 #!/bin/bash
-buff=0;		#:input for buffer test
+buff=0;		#:input for log days ago read
 togB=""; 	#:not used
 #--possible future inputs: logs:hrmtr,start addr.  
 #--output into test-file run as: bash testing.sh &>./tests_file.txt
@@ -46,12 +46,12 @@ echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 cmd="$cmd0 -s json logs 4 days 3"; 
 echo "##---cmd: $cmd ######################---:"; fi=`$cmd`; echo; #-
 cmd="perl ./test/mcpt_jsontohtml.pl ./\"$fi\"";
-echo "##---cmd: $cmd ######################---:"; echo "Output file json to html: "; 
+echo "##---cmd: $cmd ######################---:"; echo "Output json to html file: "; 
 perl ./test/mcpt_jsontohtml.pl "./$fi"; echo;
 #perl ./test/mcpt_jsontohtml.pl; 
 echo -----------------------------------; echo;echo;echo;echo; #-
 
-##--logs: +hourmeter, 
+##--logs: +hourmeter, -----------------------------------------:
 cmd="$cmd0 logs 2 days 1"; 
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 #---custom buffer:
@@ -68,18 +68,20 @@ echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 cmd="$cmd0 debug logs 2 start 0x8FF0"; 
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 
-##logs cleared zone:
-#cx="$cmd0 debug -s logs 2 days 1";
-#cmd="$cmd0 debug logs 3 start $cx";
-
-##--bulk read tests:
+##--bulk log read tests:
 cmd="$cmd0 debug logs 9 days 8"; 
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 
 cmd="$cmd0 debug logs 2 days $buff"; 
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 
-##--profiles: backup, create, validate, ...test
+##logs cleared zone:
+#cx="$cmd0 -s logs latest";
+#cmd="$cmd0 debug logs 3 start $cx";
+##+hrmeter test:
+#cx="$cmd0 -s logs latest hrs";
+
+##--profiles: backup, create, validate, ...test ---------------:
 cmd="$cmd0 profile backup"; 
 echo "##---cmd: $cmd ######################---:"; $cmd; echo;echo;echo;echo; #-
 #cat ./profiles/....._profile.txt

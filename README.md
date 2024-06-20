@@ -3,9 +3,12 @@ mcPStarMPPT
 
 ## An opensource app for controlling ProStarMPPT* solar charge controllers
 
-This program is created for interacting with your solar charge controller from a terminal application on OSX or Linux (including RaspberryPi). (MS Windows may work as well, but thats up to you..)
+This program is created for interacting with your solar charge controller from a terminal application 
+on OSX or Linux (including RaspberryPi). (MS Windows may work as well, but thats up to you..)
 
-With this release (v1.02) everything is in basic working order. This release fixes: some semi-critical profile/update bugs for allowable zero values & input error checking, missing logs, and json output additions. See the ChangeLog for more info.
+With release v1.02 everything is in basic working order. v1.02 fixes: some semi-critical 
+profile/update bugs for allowable zero values & input error checking, missing logs, and json output 
+additions. See the ChangeLog for more info. (Features which are off by default may require further testing.) 
 
 ## Requirements
 
@@ -155,13 +158,28 @@ mcPStarMPPT update 		- (if a default profile is enabled.)
 ## Known Bugs
 
 * 'days since EQ' [0xE04F] eeprom register read not working..
+* Toggling EQ: 'Battery Target V' will display EQ voltage if ON, at night this value is empty,
+so its not possible to tell if EQ is ON/OFF until daytime.
 * Display output spacing is based on [tab] being 8 spaces
+* Logs: Your computer system date/time MUST be correct for log dates to be correctly calculated. This is a 
+common fix for computers that 'forget' the date. If using the logcache and you forget to set correct date 
+on startup, delete the last logcache line (most recent) and rerun program.
 
 ### LogCache
 
-For exactness, manually added logcache dates should be in sync with their related hourmeters so that they reflect similar times. Otherwise unexpected time gaps can be introduced when dating logs. If the manually added date is for a particular log, then use the log's hourmeter and create a timestamp for the evening of the desired day. Another way is to take a previous or later logcache time and add/subtract the same amount of time to/from the hourmeter and timestamp to get new ones. (ie. -40hrs to later hourmeter & -144000 seconds to later timestamp) Remember all manually added lines MUST be inserted in numerical hourmeter order to be recognized.
+For exactness, manually added logcache dates should be in sync with their related hourmeters so that they 
+reflect similar times. Otherwise unexpected time gaps can be introduced when dating logs. If the manually 
+added date is for a particular log, then use the log's hourmeter and create a timestamp for the evening of 
+the desired day. Another way is to take a previous or later logcache time and add/subtract the same amount 
+of time to/from the hourmeter and timestamp to get new ones. (ie. -40hrs from later hourmeter & -144000 seconds 
+from later timestamp) Remember all manually added lines MUST be inserted in numerical hourmeter order to 
+be recognized.
 
-When the solar charger is turned on after a period of being off the logcache may tag the charger's hourmeter to the wrong date, which will confuse getting the correct date when reading logs. The easiest fix is to manually change the timestamp date in the logcache file for that hourmeter to last day of previous charger use, or if unknown, delete the the wrong logcache line (last one) after about 12 hrs of being back on (this will enable a new correct logcache date to be written).
+When the solar charger is turned on after a period of being off the logcache may tag the charger's hourmeter 
+to the wrong date, which will confuse getting the correct date when reading logs. The easiest fix is to 
+manually change the timestamp date in the logcache file for that hourmeter to last day of previous charger 
+use, or if unknown, delete the the wrong logcache line (last one) after a few hours of being back on and
+rerun program (this will enable a new correct logcache date to be written).
 
 ## License
 

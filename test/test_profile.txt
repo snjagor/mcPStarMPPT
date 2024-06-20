@@ -22,7 +22,7 @@ Register,new value,description,
 0xE01D, 0,	 	[v] Abs. uncomp. Max Charge Vout limit
 0xE01E, nan,	 	[C] max comp. temp clamp 	!Nan test
 0xE01F, 65534,	 	[C] min comp. temp clamp ** 	!!overnull
-0xE020, -0.56,	 	[C] ETb_lo_limit_100 		!Neg.
+0xE020, -0.56,	 	[C] ETb_lo_limit_100* 		!Neg. test
 0xE021, -20.0,	 	[C] low temp. limit_0 cutoff **
 0xE022, 0.0,	 	[v] LVD * 			!Zero Low-test
 0xE023, 19021,	 	[v] LVR
@@ -33,7 +33,7 @@ Register,new value,description,
 0xE030, 19130,	 	[v] LED ChargingBulk G->G/Y
 0xE031, 19028,	 	[v] LED ChargingFull G/Y->Y
 0xE032, 18983,	 	[v] LED Charging Y->Y/R 
-0xE033, 65505,	 	[v] LED Charging Y/R->R 		!Null V test
+0xE033, 65505,	 	[v] LED Charging Y/R->R 	!Null V test
 0xE034, 1,	 	[x] Modbus net ids
 0xE035, 31,	 	[x] Meterbus net ids		!Bad id
 0xE036, 0,	 	[v] Fixed Vmp

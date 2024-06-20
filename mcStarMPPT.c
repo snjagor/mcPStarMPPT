@@ -48,7 +48,7 @@ Notes:
 #define CUPDATEABLE 14 	/*  */
 #define UPDATEABLE 37 	/*  */
 #define MSMPPT    0x01	/* Fallback modbus address of the MPPT */ //---:[0xE034] */
-#define VERSION   1.02
+#define VERSION   1.03
 
 /* //---------------------CONFIGURATION---------------------------------------//: */
 #define MAX_CACHE_SIZE 200000		//-:max file size (bytes) before archiving & rebuilding
@@ -1142,7 +1142,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 	fprintf(fp,"EQ voltage: 		%f v		days:			%d days\n", ((maxV&&!raw)?eprom[7].value.fv*maxV:eprom[7].value.fv), eprom[8].value.dv);
 	fprintf(fp,"EQ timeout: 		%.2f hrs		days since last:	%d days\n", 
 				(eprom[getIndex(0xE00A,nume,eprom)].value.dv/3600.0), eprom[getIndex(0xE04F,nume,eprom)].value.dv);
-	fprintf(fp,"EQ under timeout:	%.2f hrs		F:			$ hu v\n", (eprom[getIndex(0xE009,nume,eprom)].value.dv/3600.0));
+	fprintf(fp,"EQ under timeout:	%.2f hrs		\n", (eprom[getIndex(0xE009,nume,eprom)].value.dv/3600.0));
 	
 	fprintf(fp,"\n__Settings & Info_________________________________________________________________\n[%s]\n", ctime_s); fflush(fp);
 	fprintf(fp,"%s\n\n", batteryVoltagesNote); //filtering??
@@ -1264,8 +1264,11 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 			long oldestLog = 0; uint startX = 0;  
 			//--get latest log:---------: 		//memory address=logs[a].log[0].hexa
 			searchLogs(ctx, start, (nNow-24), (short) 2, logs);
-			if (!logs[1].log[0].hexa) { startX = logs[0].log[0].hexa; } 
-			else { startX = logs[1].log[0].hexa; }
+			if (!logs[1].log[0].hexa) { startX = logs[0].log[0].hexa; } /*oldestLog=logs[0].log[0].hrmtr; //*/
+			else { startX = logs[1].log[0].hexa; } /*oldestLog=logs[1].log[0].hrmtr; //*/
+			//--return latest addr/hrmtr (for gap testing, etc.):
+			/*if (logOpt==5||6) { if (!sil){printf("Latest log %s:\t",(5?"address":"hourmeter"));} //!!!!!!!!!!!!!!!!
+				if (6) startX=oldestLog;  printf("0x%04X\n",startX); exit(0); } //*/
 			//--get oldest log:---------:		//latest wraps around to oldest.
 			readLogs(ctx,startX, (short)2,logs);
 			if (logs[1].log[0].value.lv) { oldestLog=logs[1].log[0].value.lv;  } //-:oldest hrmtr
@@ -1418,11 +1421,11 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				if (!logs[a].date){ logs[a].date = c_time-(ee*3600); }	//--:time_t
 				//--check buffered date hour:----buffered log dates should be in evening if correct..
 				//----buffering inexact times in cache can result in hrmtr drift...
-				if (!lbuf_input && cdMarker!=1 && logCache[0].xt && lbuf>4) { 
+				if (!lbuf_input && cdMarker!=1 && ((logCache[0].xt && timeSkipB>1) || !logCache[0].xt)) { //!!
 					struct tm *tmStruct; tmStruct = localtime (&logs[a].date); 
 					if (tmStruct != NULL && tmStruct->tm_hour < 10) { //-<10am? probably previous day in buffer... 
 						logs[a].date = (logs[a].date-(tmStruct->tm_hour*3600))-(nH*3600); 	//-:norm time 
-						if (debug>1) printf(">logDate hrs: %d am -> buffering to previous day (~%dpm)\n",
+						if (debug) printf(">logDate hrs: %d am -> buffering to previous day (~%dpm)\n",
 								tmStruct->tm_hour,(int)nH);  //daysago++; 
 				}	}  
 				//--Daysago calc:----------------------------------:
@@ -1641,7 +1644,7 @@ if (strcmp(action,"debugc")==0) { // && debug > 2
 				
 				//>1--debug:------------------------------------------------------------------:
 				if (debug) { 
-					printf(">>nextCache: %.02f  ,  PREV: %.02f \n",nextCache,previous);	
+					printf(">>nextCache: %.02f  ,  PREV: %.02f\n",nextCache,previous);	
 					printf(">>(New hrmtr correctness: [%ld : %ld])\n", timeSkipA,timeSkipB); //using second value
 					if (debug>1) {	time_t bhr = (time_t) targetD; printf(">>>(targetD = %ld == %s",  targetD, ctime(&bhr));
 						bhr = (time_t) expectedD; printf(">>>(expectedD = %ld == %s\n", expectedD, ctime(&bhr) );
@@ -2580,7 +2583,7 @@ const char* chkProfile(char doo, char* profileName) {
 			//--warn/error if nothing or nan: 
 			if (!result || strspn(token,"-1234567890.")!=strlen(token)) { 
 				//fprintf(stderr,">ERROR! > no numeric value for profile register [0x%04X] !\n",eeprom); 
-				profileIn[st].hexa = eeprom; strncpy(profileIn[st].sv, "nan", (size_t)16); st++;tmp++; continue; }//!
+				profileIn[st].hexa = eeprom; strncpy(profileIn[st].sv, "nan", (size_t)16); }//!
 			else { 
 				//--Profile: Assign eeprom values:
 				profileIn[st].hexa = eeprom; 

@@ -1,12 +1,15 @@
 #!/usr/bin/perl
 use strict;
+# Create a HTML debug file of mcStarMPPT json output.
+# perl ./mcpt_jsontohtml.pl [json file] [out-dir]
+# help: run w/no args.
+
 ##--UTF-8 Support------------------:
 use Encode qw/encode decode/;
 use open ':std', ':encoding(UTF-8)';
 binmode(CONFIG, ":utf8");
-
 #my $u = decode('UTF-8', "&theta; θ &#952;");
-#print OUT $u;  exit(0); #:works 
+#print $u;  exit(0); #:works 
 
 my ($dir, $json, $html, $file, $out, $od) = "";   my $debug=1;
 $html = $1 if ($0 =~ /^(.*\/)[^\/]+$/i);
@@ -26,9 +29,10 @@ $out = $od.$out;
 open (JSON, "<", "$json") or die "no json! [$json] $!\n"; 
 $json = do { local $/; <JSON> };
 close (JSON);
-$json =~ s/\'/\\\'/g; #:escape quotes for inserting
 $json =~ s/\\/\\\\/g; #:escape bkslashes too!? or json_stringify() fails.
-$json =~ s/[\r\n]//g; #:shouldn't be any, do anyway.
+$json =~ s/\'/\\\'/g; #:escape quotes for inserting
+$json =~ s/</\&lt\;/g; $json =~ s/>/\&gt\;/g; #:escape html chars
+$json =~ s/[\r\n]//g; #:shouldn't be any in js block. ...check this.
 
 #-:open HTML template:
 open (TMPL, "<", "$html") or die "no template! [$html] $!\n"; 
